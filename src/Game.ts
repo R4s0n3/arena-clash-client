@@ -195,6 +195,7 @@ export class Game {
       const myState = msg.players.find((p) => p.id === this.myId);
       if (myState) {
         this.ui.updateStamina(myState.stamina, myState.maxStamina);
+        this.ui.updateHealth(myState.health, myState.maxHealth);
         this.lastServerAction = myState.action;
       }
     });
@@ -336,9 +337,9 @@ export class Game {
       const rotation = this.input.getRotationY();
       this.predictedRotation = rotation;
 
-      // Negate inputs: camera is behind the player, so visual forward = -server forward
-      const forward = -rawInput.forward;
-      const right = -rawInput.right;
+      // Inputs match server forward/right when camera is behind the player
+      const forward = rawInput.forward;
+      const right = rawInput.right;
 
       // Calculate local move speed for entity animation
       const inputMag = Math.sqrt(forward * forward + right * right);
@@ -379,7 +380,7 @@ export class Game {
         }
       }
 
-      // Send input (with negated values so server moves correctly)
+      // Send input to server
       this.inputSeq++;
       this.pendingInputs.push({ seq: this.inputSeq, forward, right, rotation, dt: rawDt });
       if (this.pendingInputs.length > 120) {
@@ -467,7 +468,7 @@ export class Game {
       for (const input of this.pendingInputs) {
         const sin = Math.sin(input.rotation);
         const cos = Math.cos(input.rotation);
-        // Note: input.forward and input.right are already negated when stored
+        // Note: input.forward and input.right are stored as-is
         let dx = input.right * cos - input.forward * sin;
         let dz = input.right * sin - input.forward * cos;
         const len = Math.sqrt(dx * dx + dz * dz);

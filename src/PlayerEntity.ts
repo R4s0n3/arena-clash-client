@@ -174,9 +174,9 @@ export class PlayerEntity {
 
     // Shield attached to left arm - face points outward (-Z = forward)
     this.shieldGroup = new THREE.Group();
-    // Slightly higher, more forward, and gently canted inward for a held feel
+    // Slightly higher, more forward, and gently canted outward for a held feel
     this.shieldGroup.position.set(0.12, -0.38, -0.28);
-    this.shieldGroup.rotation.set(0.05, 0.25, 0.07);
+    this.shieldGroup.rotation.set(0.05, 0, 0.12);
     this.lArm.add(this.shieldGroup);
 
     // Shield body - flat box, wide and tall, thin depth
@@ -413,8 +413,8 @@ export class PlayerEntity {
       this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.3 + recoil, 8, dt);
       this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.08, 8, dt);
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.25, 8, dt);
-      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.08, 8, dt);
-      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0.08, 8, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, 0.08, 8, dt);
+      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0, 8, dt);
 
       // Legs straight
       this.rLeg.rotation.x = approach(this.rLeg.rotation.x, 0, 8, dt);
@@ -444,8 +444,8 @@ export class PlayerEntity {
       this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.2 - sin * 0.35 * walkFactor + recoil, 12, dt);
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.2 + sin * 0.3 * walkFactor, 12, dt);
       this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.05, 8, dt);
-      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.05, 8, dt);
-      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0.08, 8, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, 0.05, 8, dt);
+      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0, 8, dt);
 
       // Torso lean forward + slight bounce
       this.torso.rotation.x = approach(this.torso.rotation.x, -0.05 * walkFactor + recoil, 10, dt);
@@ -492,8 +492,8 @@ export class PlayerEntity {
 
       // Shield tucks to body during attack
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.4, 10, dt);
-      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.3, 10, dt);
-      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0.12, 10, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, 0.25, 10, dt);
+      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0, 10, dt);
 
       // Legs stable
       this.rLeg.rotation.x = approach(this.rLeg.rotation.x, 0.1 * strike, 8, dt);
@@ -504,8 +504,8 @@ export class PlayerEntity {
     if (state.action === "blocking") {
       // Shield arm forward and across the body
       this.lArm.rotation.x = approach(this.lArm.rotation.x, 0.95, 16, dt);
-      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.6, 12, dt);
-      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0.35, 12, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, 0.45, 12, dt);
+      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0, 12, dt);
 
       // Sword arm back
       this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.2 + recoil, 10, dt);
@@ -558,7 +558,7 @@ export class PlayerEntity {
       this.lLeg.rotation.x = approach(this.lLeg.rotation.x, 0.1, 6, dt);
       this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.5 + recoil, 6, dt);
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.5, 6, dt);
-      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0.05, 6, dt);
+      this.lArm.rotation.y = approach(this.lArm.rotation.y, 0, 6, dt);
     }
 
     // Reset sword rotations when not attacking

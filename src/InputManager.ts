@@ -12,8 +12,9 @@ export class InputManager {
   private isBlocking = false;
   private isPointerLocked = false;
 
-  private static readonly ACCEL = 16;
-  private static readonly DECEL = 20;
+  private static readonly ACCEL = 22;
+  private static readonly TURN_ACCEL = 30;
+  private static readonly DECEL = 26;
   private static readonly DEADZONE = 0.01;
 
   constructor() {
@@ -83,21 +84,32 @@ export class InputManager {
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight"))
       targetRight += 1;
 
-    const fAccel =
-      targetForward !== 0
-        ? InputManager.ACCEL
-        : InputManager.DECEL;
-    const rAccel =
-      targetRight !== 0
-        ? InputManager.ACCEL
+    // Normalize intended movement to avoid faster diagonals.
+    const targetLen = Math.hypot(targetForward, targetRight);
+    if (targetLen > 1) {
+      targetForward /= targetLen;
+      targetRight /= targetLen;
+    }
+
+    // Vector-based acceleration feels more natural than per-axis lerp.
+    const desiredDot = this.moveForward * targetForward + this.moveRight * targetRight;
+    const accel =
+      targetLen > 0
+        ? (desiredDot < 0 ? InputManager.TURN_ACCEL : InputManager.ACCEL)
         : InputManager.DECEL;
 
-    this.moveForward +=
-      (targetForward - this.moveForward) *
-      Math.min(1, fAccel * dt);
-    this.moveRight +=
-      (targetRight - this.moveRight) *
-      Math.min(1, rAccel * dt);
+    const dx = targetRight - this.moveRight;
+    const dy = targetForward - this.moveForward;
+    const dist = Math.hypot(dx, dy);
+    const maxStep = accel * dt;
+
+    if (dist > maxStep && dist > 0) {
+      this.moveRight += (dx / dist) * maxStep;
+      this.moveForward += (dy / dist) * maxStep;
+    } else {
+      this.moveRight = targetRight;
+      this.moveForward = targetForward;
+    }
 
     if (Math.abs(this.moveForward) < InputManager.DEADZONE)
       this.moveForward = 0;
