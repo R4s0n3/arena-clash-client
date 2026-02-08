@@ -410,7 +410,7 @@ export class PlayerEntity {
       this.torso.position.y = 1.4 + breathe;
 
       // Arms relaxed but ready
-      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.3 + recoil, 8, dt);
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, 0.25 + recoil, 8, dt);
       this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.08, 8, dt);
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.25, 8, dt);
       this.lArm.rotation.z = approach(this.lArm.rotation.z, 0.08, 8, dt);
@@ -441,7 +441,7 @@ export class PlayerEntity {
       this.lLeg.rotation.x = approach(this.lLeg.rotation.x, -sin * 0.6 * walkFactor, 15, dt);
 
       // Arms counter-swing
-      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.2 - sin * 0.35 * walkFactor + recoil, 12, dt);
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, 0.25 + sin * 0.35 * walkFactor + recoil, 12, dt);
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.2 + sin * 0.3 * walkFactor, 12, dt);
       this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.05, 8, dt);
       this.lArm.rotation.z = approach(this.lArm.rotation.z, 0.05, 8, dt);
@@ -471,19 +471,19 @@ export class PlayerEntity {
 
       if (step === 1) {
         // Right horizontal slash
-        this.rArm.rotation.x = -0.5 * wind + (-0.8) * strike + 0.2 * follow + 0.1 * recover;
-        this.rArm.rotation.z = 1.2 * wind - 1.8 * strike + 0.4 * follow;
-        this.swordGroup.rotation.z = -0.3 * wind + 1.2 * strike - 0.2 * follow;
-        this.torso.rotation.y = approach(this.torso.rotation.y, -0.3 * wind + 0.5 * strike - 0.1 * follow, 18, dt);
+        this.rArm.rotation.x = 0.7 * wind + 1.0 * strike - 0.15 * follow - 0.05 * recover;
+        this.rArm.rotation.z = -1.2 * wind + 1.8 * strike - 0.4 * follow;
+        this.swordGroup.rotation.z = 0.3 * wind - 1.2 * strike + 0.2 * follow;
+        this.torso.rotation.y = approach(this.torso.rotation.y, 0.3 * wind - 0.5 * strike + 0.1 * follow, 18, dt);
       } else if (step === 2) {
         // Backhand slash (opposite direction)
-        this.rArm.rotation.x = -0.4 * wind + (-0.7) * strike + 0.2 * follow + 0.1 * recover;
-        this.rArm.rotation.z = -1.0 * wind + 1.6 * strike - 0.3 * follow;
-        this.swordGroup.rotation.z = 0.3 * wind - 1.3 * strike + 0.2 * follow;
-        this.torso.rotation.y = approach(this.torso.rotation.y, 0.3 * wind - 0.5 * strike + 0.1 * follow, 18, dt);
+        this.rArm.rotation.x = 0.6 * wind + 0.9 * strike - 0.15 * follow - 0.05 * recover;
+        this.rArm.rotation.z = 1.0 * wind - 1.6 * strike + 0.3 * follow;
+        this.swordGroup.rotation.z = -0.3 * wind + 1.3 * strike - 0.2 * follow;
+        this.torso.rotation.y = approach(this.torso.rotation.y, -0.3 * wind + 0.5 * strike - 0.1 * follow, 18, dt);
       } else {
         // Overhead slam
-        this.rArm.rotation.x = -2.5 * wind + 2.0 * strike + 0.3 * follow + 0.1 * recover;
+        this.rArm.rotation.x = -2.4 * wind + 2.2 * strike + 0.4 * follow + 0.1 * recover;
         this.rArm.rotation.z = 0.2 * wind - 0.1 * strike;
         this.swordGroup.rotation.x = -0.3 * wind + 0.2 * strike;
         this.torso.rotation.x = approach(this.torso.rotation.x, -0.15 * wind + 0.1 * strike + recoil, 15, dt);
