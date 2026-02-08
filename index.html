@@ -1,0 +1,252 @@
+<!-- client/index.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>⚔️ Arena Clash</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        overflow: hidden;
+        background: #000;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        cursor: crosshair;
+      }
+      canvas {
+        display: block;
+      }
+
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 100;
+      }
+      #overlay .panel {
+        text-align: center;
+        color: #fff;
+      }
+      #overlay h1 {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 0 20px rgba(231, 76, 60, 0.8);
+      }
+      #overlay p {
+        color: #aaa;
+        margin-bottom: 1.5rem;
+        font-size: 1.1rem;
+      }
+      #overlay button {
+        padding: 14px 48px;
+        font-size: 1.2rem;
+        background: #e74c3c;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: background 0.2s;
+      }
+      #overlay button:hover {
+        background: #c0392b;
+      }
+      .controls-info {
+        margin-top: 1.5rem;
+        color: #888;
+        font-size: 0.85rem;
+        line-height: 1.8;
+      }
+      .controls-info kbd {
+        background: #333;
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid #555;
+        font-family: monospace;
+      }
+
+      #hud {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: none;
+      }
+      #health-bar-bg {
+        width: 300px;
+        height: 24px;
+        background: #333;
+        border-radius: 12px;
+        border: 2px solid #555;
+        overflow: hidden;
+      }
+      #health-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #e74c3c, #2ecc71);
+        border-radius: 10px;
+        transition: width 0.2s;
+      }
+      #health-text {
+        text-align: center;
+        color: #fff;
+        font-size: 0.8rem;
+        margin-top: 4px;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      }
+
+      #scoreboard {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.7);
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: #fff;
+        font-size: 0.8rem;
+        display: none;
+        min-width: 180px;
+      }
+      #scoreboard h3 {
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+        color: #f39c12;
+        border-bottom: 1px solid #444;
+        padding-bottom: 4px;
+      }
+      .score-entry {
+        display: flex;
+        justify-content: space-between;
+        padding: 2px 0;
+      }
+      .score-entry .name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .score-entry .color-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .score-entry.self {
+        color: #f1c40f;
+        font-weight: bold;
+      }
+
+      #chatlog {
+        position: fixed;
+        bottom: 70px;
+        left: 10px;
+        z-index: 10;
+        display: none;
+        max-height: 160px;
+        overflow: hidden;
+      }
+      .chat-msg {
+        color: #ddd;
+        font-size: 0.75rem;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+        padding: 1px 0;
+        animation: fadeout 8s forwards;
+      }
+      @keyframes fadeout {
+        0%, 70% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      #crosshair {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 10;
+        pointer-events: none;
+        display: none;
+        font-size: 1.5rem;
+        color: rgba(255, 255, 255, 0.4);
+      }
+
+      #death-screen {
+        position: fixed;
+        inset: 0;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        background: rgba(139, 0, 0, 0.3);
+        z-index: 50;
+        color: #fff;
+        font-size: 2rem;
+        text-shadow: 0 0 20px rgba(139, 0, 0, 0.8);
+        flex-direction: column;
+      }
+      #death-screen .sub {
+        font-size: 1rem;
+        color: #ccc;
+        margin-top: 0.5rem;
+      }
+
+      #player-count {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        color: #888;
+        font-size: 0.8rem;
+        z-index: 10;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <div class="panel">
+        <h1>⚔️ Arena Clash</h1>
+        <p>Enter the arena. Fight to survive.</p>
+        <button id="play-btn">ENTER ARENA</button>
+        <div class="controls-info">
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+          Move &nbsp;|&nbsp;
+          <kbd>Mouse</kbd> Look<br />
+          <kbd>Left Click</kbd> Sword Attack &nbsp;|&nbsp;
+          <kbd>Right Click</kbd> Shield Block
+        </div>
+      </div>
+    </div>
+
+    <div id="hud">
+      <div id="health-bar-bg">
+        <div id="health-bar" style="width: 100%"></div>
+      </div>
+      <div id="health-text">100 / 100</div>
+    </div>
+
+    <div id="scoreboard">
+      <h3>⚔ Scoreboard</h3>
+      <div id="scores"></div>
+    </div>
+
+    <div id="chatlog"></div>
+    <div id="crosshair">+</div>
+
+    <div id="death-screen">
+      <div>YOU DIED</div>
+      <div class="sub">Respawning...</div>
+    </div>
+
+    <div id="player-count"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
