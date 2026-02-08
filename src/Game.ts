@@ -21,6 +21,8 @@ import type {
 } from "./types";
 
 const PLAYER_SPEED = 8;
+const GRAVITY = 16;
+const JUMP_VELOCITY = 8.5;
 
 // Client-side prediction input record
 interface InputRecord {
@@ -68,6 +70,9 @@ export class Game {
 
   // Player names cache
   private playerNames: Map<string, string> = new Map();
+
+  // Client-side jump prediction
+  private predictedYVel = 0;
 
   // Hit-stop: when > 0, freeze entity animations
   private hitStopTimer = 0;
@@ -273,6 +278,7 @@ export class Game {
         this.predictedX = msg.x;
         this.predictedZ = msg.z;
         this.predictedY = 0;
+        this.predictedYVel = 0;
         this.pendingInputs = [];
       }
     });
@@ -326,11 +332,15 @@ export class Game {
     this.input.update(rawDt); // input always uses real dt
 
     if (this.myId) {
-      const { forward, right } = this.input.getMovement();
+      const rawInput = this.input.getMovement();
       const rotation = this.input.getRotationY();
       this.predictedRotation = rotation;
 
-      // Calculate local move speed for entity animation (from input, not server deltas)
+      // Negate inputs: camera is behind the player, so visual forward = -server forward
+      const forward = -rawInput.forward;
+      const right = -rawInput.right;
+
+      // Calculate local move speed for entity animation
       const inputMag = Math.sqrt(forward * forward + right * right);
       const localSpeed = inputMag * PLAYER_SPEED * (this.lastServerAction === "blocking" ? 0.55 : 1.0);
       const canMove = this.lastServerAction !== "attacking" && this.lastServerAction !== "dodging";
@@ -339,7 +349,7 @@ export class Game {
         myEntity.setLocalMoveSpeed(canMove ? localSpeed : 0);
       }
 
-      // Client-side prediction
+      // Client-side XZ prediction
       if (canMove && (forward !== 0 || right !== 0)) {
         const sin = Math.sin(rotation);
         const cos = Math.cos(rotation);
@@ -348,7 +358,7 @@ export class Game {
         const len = Math.sqrt(dx * dx + dz * dz);
         if (len > 1) { dx /= len; dz /= len; }
         const speedMul = this.lastServerAction === "blocking" ? 0.55 : 1.0;
-        this.predictedX += dx * PLAYER_SPEED * speedMul * rawDt; // use raw dt for prediction
+        this.predictedX += dx * PLAYER_SPEED * speedMul * rawDt;
         this.predictedZ += dz * PLAYER_SPEED * speedMul * rawDt;
 
         const dist = Math.sqrt(this.predictedX * this.predictedX + this.predictedZ * this.predictedZ);
@@ -359,7 +369,17 @@ export class Game {
         }
       }
 
-      // Send input
+      // Client-side Y prediction (jump + gravity)
+      if (this.predictedY > 0 || this.predictedYVel > 0) {
+        this.predictedYVel -= GRAVITY * rawDt;
+        this.predictedY += this.predictedYVel * rawDt;
+        if (this.predictedY <= 0) {
+          this.predictedY = 0;
+          this.predictedYVel = 0;
+        }
+      }
+
+      // Send input (with negated values so server moves correctly)
       this.inputSeq++;
       this.pendingInputs.push({ seq: this.inputSeq, forward, right, rotation, dt: rawDt });
       if (this.pendingInputs.length > 120) {
@@ -379,7 +399,15 @@ export class Game {
       }
       if (this.input.consumeBlockStart()) this.network.send({ type: "blockStart" });
       if (this.input.consumeBlockEnd()) this.network.send({ type: "blockEnd" });
-      if (this.input.consumeJump()) { this.network.send({ type: "jump" }); this.sound.playJump(); }
+      if (this.input.consumeJump()) {
+        this.network.send({ type: "jump" });
+        this.sound.playJump();
+        // Client-side jump prediction: instantly apply jump velocity
+        if (this.predictedY <= 0.001) {
+          this.predictedYVel = JUMP_VELOCITY;
+          this.predictedY = 0.001;
+        }
+      }
       if (this.input.consumeDodge()) { this.network.send({ type: "dodge" }); this.sound.playDodge(); }
 
       // Set predicted position
@@ -429,13 +457,17 @@ export class Game {
 
     this.predictedX = serverState.x;
     this.predictedZ = serverState.z;
-    this.predictedY = serverState.y;
+    // Only snap Y to server if we're not mid-jump locally (avoids jitter)
+    if (this.predictedYVel === 0) {
+      this.predictedY = serverState.y;
+    }
 
     const canMove = serverState.action !== "attacking" && serverState.action !== "dodging";
     if (canMove) {
       for (const input of this.pendingInputs) {
         const sin = Math.sin(input.rotation);
         const cos = Math.cos(input.rotation);
+        // Note: input.forward and input.right are already negated when stored
         let dx = input.right * cos - input.forward * sin;
         let dz = input.right * sin - input.forward * cos;
         const len = Math.sqrt(dx * dx + dz * dz);
