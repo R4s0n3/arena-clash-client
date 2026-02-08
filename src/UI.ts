@@ -11,6 +11,8 @@ export class UI {
   private crosshair: HTMLElement;
   private deathScreen: HTMLElement;
   private playerCount: HTMLElement;
+  private staminaBar: HTMLElement;
+  private killFeed: HTMLElement;
 
   constructor() {
     this.healthBar = document.getElementById("health-bar")!;
@@ -21,8 +23,9 @@ export class UI {
     this.chatlog = document.getElementById("chatlog")!;
     this.crosshair = document.getElementById("crosshair")!;
     this.deathScreen = document.getElementById("death-screen")!;
-    this.playerCount =
-      document.getElementById("player-count")!;
+    this.playerCount = document.getElementById("player-count")!;
+    this.staminaBar = document.getElementById("stamina-bar")!;
+    this.killFeed = document.getElementById("kill-feed")!;
   }
 
   showHud(): void {
@@ -31,13 +34,13 @@ export class UI {
     this.chatlog.style.display = "block";
     this.crosshair.style.display = "block";
     this.playerCount.style.display = "block";
+    this.killFeed.style.display = "block";
   }
 
   updateHealth(health: number, maxHealth: number): void {
     const pct = Math.max(0, (health / maxHealth) * 100);
     this.healthBar.style.width = `${pct}%`;
 
-    // Color gradient: green -> yellow -> red
     if (pct > 60) {
       this.healthBar.style.background =
         "linear-gradient(90deg, #27ae60, #2ecc71)";
@@ -52,6 +55,22 @@ export class UI {
     this.healthText.textContent = `${Math.ceil(health)} / ${maxHealth}`;
   }
 
+  updateStamina(stamina: number, maxStamina: number): void {
+    const pct = Math.max(0, (stamina / maxStamina) * 100);
+    this.staminaBar.style.width = `${pct}%`;
+
+    if (pct > 50) {
+      this.staminaBar.style.background =
+        "linear-gradient(90deg, #2980b9, #3498db)";
+    } else if (pct > 25) {
+      this.staminaBar.style.background =
+        "linear-gradient(90deg, #d35400, #e67e22)";
+    } else {
+      this.staminaBar.style.background =
+        "linear-gradient(90deg, #7f1d1d, #c0392b)";
+    }
+  }
+
   flashDamage(): void {
     const flash = document.createElement("div");
     flash.style.cssText = `
@@ -61,7 +80,6 @@ export class UI {
       animation: dmgflash 0.3s ease-out forwards;
     `;
 
-    // Inject keyframes if not present
     if (!document.getElementById("dmgflash-style")) {
       const style = document.createElement("style");
       style.id = "dmgflash-style";
@@ -86,14 +104,8 @@ export class UI {
     this.deathScreen.style.display = "none";
   }
 
-  updateScoreboard(
-    players: PlayerState[],
-    myId: string
-  ): void {
-    // Sort by kills descending
-    const sorted = [...players].sort(
-      (a, b) => b.kills - a.kills
-    );
+  updateScoreboard(players: PlayerState[], myId: string): void {
+    const sorted = [...players].sort((a, b) => b.kills - a.kills);
 
     this.scoresDiv.innerHTML = sorted
       .map((p) => {
@@ -102,7 +114,7 @@ export class UI {
           <div class="score-entry ${isSelf ? "self" : ""}">
             <span class="name">
               <span class="color-dot" style="background:${p.color}"></span>
-              ${p.name}${p.isDead ? " 💀" : ""}
+              ${this.escapeHtml(p.name)}${p.isDead ? " &#x1F480;" : ""}
             </span>
             <span>${p.kills}K / ${p.deaths}D</span>
           </div>
@@ -121,12 +133,29 @@ export class UI {
     msg.textContent = text;
     this.chatlog.appendChild(msg);
 
-    // Keep only last 10 messages
     while (this.chatlog.children.length > 10) {
       this.chatlog.removeChild(this.chatlog.firstChild!);
     }
 
-    // Remove after animation
     setTimeout(() => msg.remove(), 8000);
+  }
+
+  addKillFeedEntry(killerName: string, targetName: string): void {
+    const entry = document.createElement("div");
+    entry.className = "kill-entry";
+    entry.innerHTML = `<span class="killer">${this.escapeHtml(killerName)}</span> <span class="kill-icon">&#x2694;</span> <span class="victim">${this.escapeHtml(targetName)}</span>`;
+    this.killFeed.appendChild(entry);
+
+    while (this.killFeed.children.length > 5) {
+      this.killFeed.removeChild(this.killFeed.firstChild!);
+    }
+
+    setTimeout(() => entry.remove(), 5000);
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
   }
 }

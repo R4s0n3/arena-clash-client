@@ -8,6 +8,7 @@ export class InputManager {
   private pendingBlockStart = false;
   private pendingBlockEnd = false;
   private pendingJump = false;
+  private pendingDodge = false;
   private isBlocking = false;
   private isPointerLocked = false;
 
@@ -22,6 +23,9 @@ export class InputManager {
         if (!e.repeat) {
           this.pendingJump = true;
         }
+      }
+      if ((e.code === "ShiftLeft" || e.code === "ShiftRight") && !e.repeat) {
+        this.pendingDodge = true;
       }
       this.keys.add(e.code);
     });
@@ -42,10 +46,8 @@ export class InputManager {
       }
 
       if (e.button === 0) {
-        // Left click — attack
         this.pendingAttack = true;
       } else if (e.button === 2) {
-        // Right click — block
         this.isBlocking = true;
         this.pendingBlockStart = true;
       }
@@ -138,6 +140,14 @@ export class InputManager {
   consumeJump(): boolean {
     if (this.pendingJump) {
       this.pendingJump = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumeDodge(): boolean {
+    if (this.pendingDodge) {
+      this.pendingDodge = false;
       return true;
     }
     return false;

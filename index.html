@@ -1,4 +1,3 @@
-<!-- client/index.html -->
 <!doctype html>
 <html lang="en">
   <head>
@@ -7,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0"
     />
-    <title>⚔️ Arena Clash</title>
+    <title>Arena Clash</title>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Space+Grotesk:wght@400;600&display=swap");
 
@@ -42,6 +41,7 @@
         display: block;
       }
 
+      /* Overlay / Title Screen */
       #overlay {
         position: fixed;
         inset: 0;
@@ -62,7 +62,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), inset 0 0 40px rgba(211, 108, 53, 0.12);
         padding: 36px 44px;
         border-radius: 18px;
-        min-width: 340px;
+        min-width: 360px;
         animation: panel-rise 0.8s ease forwards;
       }
       #overlay h1 {
@@ -74,8 +74,30 @@
       }
       #overlay p {
         color: #cfd6dd;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.2rem;
         font-size: 1.05rem;
+      }
+      #name-input {
+        display: block;
+        width: 100%;
+        padding: 10px 16px;
+        margin-bottom: 1rem;
+        font-size: 1rem;
+        font-family: "Space Grotesk", sans-serif;
+        background: rgba(20, 25, 32, 0.8);
+        border: 1px solid rgba(212, 178, 111, 0.4);
+        border-radius: 10px;
+        color: var(--frost);
+        text-align: center;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      #name-input::placeholder {
+        color: #6b7280;
+      }
+      #name-input:focus {
+        border-color: var(--ember-bright);
+        box-shadow: 0 0 16px rgba(211, 108, 53, 0.2);
       }
       #overlay button {
         padding: 14px 52px;
@@ -116,8 +138,8 @@
       .controls-info {
         margin-top: 1.5rem;
         color: #9aa3ad;
-        font-size: 0.85rem;
-        line-height: 1.9;
+        font-size: 0.82rem;
+        line-height: 2;
       }
       .controls-info kbd {
         background: #1c232d;
@@ -128,6 +150,7 @@
         color: #f0e8d8;
       }
 
+      /* HUD - Health & Stamina */
       #hud {
         position: fixed;
         bottom: 22px;
@@ -141,30 +164,42 @@
         padding: 12px 18px;
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
       }
-      #health-bar-bg {
+      .bar-bg {
         width: 320px;
-        height: 22px;
+        height: 18px;
         background: linear-gradient(180deg, #1a202b, #0e1218);
         border-radius: 999px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         overflow: hidden;
         box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.6);
       }
+      .bar-bg + .bar-bg {
+        margin-top: 6px;
+        height: 10px;
+      }
       #health-bar {
         height: 100%;
-        background: linear-gradient(90deg, #9a3a2f, #f1a15e);
+        background: linear-gradient(90deg, #27ae60, #2ecc71);
         border-radius: 999px;
         transition: width 0.2s;
         box-shadow: 0 0 18px var(--glow);
       }
+      #stamina-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #2980b9, #3498db);
+        border-radius: 999px;
+        transition: width 0.15s;
+        box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+      }
       #health-text {
         text-align: center;
         color: #f4efe6;
-        font-size: 0.8rem;
-        margin-top: 6px;
+        font-size: 0.75rem;
+        margin-top: 4px;
         letter-spacing: 0.08em;
       }
 
+      /* Scoreboard */
       #scoreboard {
         position: fixed;
         top: 16px;
@@ -215,9 +250,10 @@
         font-weight: 600;
       }
 
+      /* Chat */
       #chatlog {
         position: fixed;
-        bottom: 90px;
+        bottom: 110px;
         left: 16px;
         z-index: 10;
         display: none;
@@ -241,6 +277,44 @@
         100% { opacity: 0; }
       }
 
+      /* Kill Feed */
+      #kill-feed {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: none;
+        text-align: center;
+        pointer-events: none;
+      }
+      .kill-entry {
+        background: rgba(12, 16, 22, 0.8);
+        border: 1px solid rgba(212, 178, 111, 0.2);
+        border-radius: 8px;
+        padding: 5px 14px;
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+        animation: killfade 5s forwards;
+        display: inline-block;
+      }
+      .kill-entry .killer {
+        color: #e74c3c;
+        font-weight: 600;
+      }
+      .kill-entry .kill-icon {
+        color: var(--gold);
+        margin: 0 4px;
+      }
+      .kill-entry .victim {
+        color: #bdc3c7;
+      }
+      @keyframes killfade {
+        0%, 60% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(-10px); }
+      }
+
+      /* Crosshair */
       #crosshair {
         position: fixed;
         top: 50%;
@@ -267,6 +341,7 @@
         transform: translate(-50%, -50%);
       }
 
+      /* Death Screen */
       #death-screen {
         position: fixed;
         inset: 0;
@@ -290,6 +365,7 @@
         font-family: "Space Grotesk", sans-serif;
       }
 
+      /* Player Count */
       #player-count {
         position: fixed;
         top: 16px;
@@ -319,34 +395,47 @@
   <body>
     <div id="overlay">
       <div class="panel">
-        <h1>⚔️ Arena Clash</h1>
+        <h1>Arena Clash</h1>
         <p>Enter the arena. Fight to survive.</p>
+        <input
+          id="name-input"
+          type="text"
+          placeholder="Enter your name..."
+          maxlength="20"
+          autocomplete="off"
+          spellcheck="false"
+        />
         <button id="play-btn">ENTER ARENA</button>
         <div class="controls-info">
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
           Move &nbsp;|&nbsp;
           <kbd>Mouse</kbd> Look<br />
-          <kbd>Left Click</kbd> Sword Attack &nbsp;|&nbsp;
-          <kbd>Right Click</kbd> Shield Block &nbsp;|&nbsp;
-          <kbd>Space</kbd> Jump
+          <kbd>Left Click</kbd> Attack &nbsp;|&nbsp;
+          <kbd>Right Click</kbd> Block<br />
+          <kbd>Space</kbd> Jump &nbsp;|&nbsp;
+          <kbd>Shift</kbd> Dodge
         </div>
       </div>
     </div>
 
     <div id="hud">
-      <div id="health-bar-bg">
+      <div class="bar-bg">
         <div id="health-bar" style="width: 100%"></div>
+      </div>
+      <div class="bar-bg">
+        <div id="stamina-bar" style="width: 100%"></div>
       </div>
       <div id="health-text">100 / 100</div>
     </div>
 
     <div id="scoreboard">
-      <h3>⚔ Scoreboard</h3>
+      <h3>Scoreboard</h3>
       <div id="scores"></div>
     </div>
 
     <div id="chatlog"></div>
     <div id="crosshair"></div>
+    <div id="kill-feed"></div>
 
     <div id="death-screen">
       <div>YOU DIED</div>

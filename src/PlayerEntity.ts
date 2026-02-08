@@ -16,6 +16,8 @@ export class PlayerEntity {
   private shield: THREE.Group;
   private rightArm: THREE.Group;
   private leftArm: THREE.Group;
+  private leftLeg: THREE.Mesh;
+  private rightLeg: THREE.Mesh;
   private nameSprite: THREE.Sprite;
   private isLocal: boolean;
   private targetPos: THREE.Vector3;
@@ -28,6 +30,16 @@ export class PlayerEntity {
   private idleTime = 0;
   private landTimer = 0;
   private prevY = 0;
+  // Movement tracking for leg animation
+  private prevX = 0;
+  private prevZ = 0;
+  private walkCycle = 0;
+  private moveSpeed = 0;
+  // Dodge animation
+  private dodgeTime = 0;
+  private dodgeActive = false;
+  // Block impact visual
+  private blockImpactTime = 0;
 
   constructor(
     state: PlayerState,
@@ -38,12 +50,10 @@ export class PlayerEntity {
     this.group = new THREE.Group();
     this.torso = new THREE.Group();
     this.group.add(this.torso);
-    this.targetPos = new THREE.Vector3(
-      state.x,
-      state.y,
-      state.z
-    );
+    this.targetPos = new THREE.Vector3(state.x, state.y, state.z);
     this.targetRot = state.rotation;
+    this.prevX = state.x;
+    this.prevZ = state.z;
 
     const color = new THREE.Color(state.color);
     this.originalColor = color.clone();
@@ -92,8 +102,7 @@ export class PlayerEntity {
       roughness: 0.8,
     });
     this.head = new THREE.Mesh(headGeo, headMat);
-    this.head.position.y =
-      BODY_HEIGHT + 0.35 + HEAD_RADIUS + 0.05;
+    this.head.position.y = BODY_HEIGHT + 0.35 + HEAD_RADIUS + 0.05;
     this.head.castShadow = true;
     this.torso.add(this.head);
 
@@ -104,7 +113,7 @@ export class PlayerEntity {
     helm.position.y = this.head.position.y + 0.02;
     this.torso.add(helm);
 
-    // Eye visor (to show facing direction)
+    // Eye visor
     const visorGeo = new THREE.BoxGeometry(0.5, 0.08, 0.1);
     const visorMat = new THREE.MeshStandardMaterial({
       color: 0x333333,
@@ -114,29 +123,25 @@ export class PlayerEntity {
     visor.position.set(0, BODY_HEIGHT + 0.35 + HEAD_RADIUS + 0.05, -HEAD_RADIUS + 0.02);
     this.torso.add(visor);
 
-    // Legs
+    // Legs - now stored as instance properties for animation
     const legGeo = new THREE.CapsuleGeometry(0.13, 0.65, 6, 8);
     const legMat = new THREE.MeshStandardMaterial({
       color: 0x2f333a,
       roughness: 0.9,
       metalness: 0.1,
     });
-    const leftLeg = new THREE.Mesh(legGeo, legMat);
-    leftLeg.position.set(0.18, 0.35, 0);
-    const rightLeg = new THREE.Mesh(legGeo, legMat);
-    rightLeg.position.set(-0.18, 0.35, 0);
-    leftLeg.castShadow = true;
-    rightLeg.castShadow = true;
-    this.group.add(leftLeg);
-    this.group.add(rightLeg);
+    this.leftLeg = new THREE.Mesh(legGeo, legMat);
+    this.leftLeg.position.set(0.18, 0.35, 0);
+    this.rightLeg = new THREE.Mesh(legGeo, legMat);
+    this.rightLeg.position.set(-0.18, 0.35, 0);
+    this.leftLeg.castShadow = true;
+    this.rightLeg.castShadow = true;
+    this.group.add(this.leftLeg);
+    this.group.add(this.rightLeg);
 
     // Right arm (sword arm)
     this.rightArm = new THREE.Group();
-    this.rightArm.position.set(
-      -0.55,
-      BODY_HEIGHT / 2 + 0.65,
-      0
-    );
+    this.rightArm.position.set(-0.55, BODY_HEIGHT / 2 + 0.65, 0);
 
     const rArmGeo = new THREE.CapsuleGeometry(0.12, 0.5, 6, 8);
     const armMat = new THREE.MeshStandardMaterial({
@@ -165,21 +170,12 @@ export class PlayerEntity {
     blade.castShadow = true;
     this.sword.add(blade);
 
-    // Sword handle
-    const handleGeo = new THREE.CylinderGeometry(
-      0.04,
-      0.04,
-      0.2,
-      8
-    );
-    const handleMat = new THREE.MeshStandardMaterial({
-      color: 0x5a3c20,
-    });
+    const handleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8);
+    const handleMat = new THREE.MeshStandardMaterial({ color: 0x5a3c20 });
     const handle = new THREE.Mesh(handleGeo, handleMat);
     handle.position.y = 0.05;
     this.sword.add(handle);
 
-    // Crossguard
     const guardGeo = new THREE.BoxGeometry(0.25, 0.04, 0.06);
     const guardMat = new THREE.MeshStandardMaterial({
       color: 0xd4b26f,
@@ -196,11 +192,7 @@ export class PlayerEntity {
 
     // Left arm (shield arm)
     this.leftArm = new THREE.Group();
-    this.leftArm.position.set(
-      0.55,
-      BODY_HEIGHT / 2 + 0.65,
-      0
-    );
+    this.leftArm.position.set(0.55, BODY_HEIGHT / 2 + 0.65, 0);
 
     const lArmMesh = new THREE.Mesh(rArmGeo.clone(), armMat);
     lArmMesh.position.y = -0.25;
@@ -221,7 +213,6 @@ export class PlayerEntity {
     const shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
     shieldMesh.castShadow = true;
 
-    // Shield rim
     const rimGeo = new THREE.TorusGeometry(0.43, 0.04, 8, 16);
     const rimMat = new THREE.MeshStandardMaterial({
       color: 0xd4b26f,
@@ -232,7 +223,6 @@ export class PlayerEntity {
     rim.position.y = 0.04;
     this.shield.add(rim);
 
-    // Shield boss (center)
     const bossGeo = new THREE.SphereGeometry(0.08, 8, 8);
     const bossMat = new THREE.MeshStandardMaterial({
       color: 0xd4b26f,
@@ -249,30 +239,18 @@ export class PlayerEntity {
     this.torso.add(this.leftArm);
 
     // Name tag
-    this.nameSprite = this.createNameSprite(
-      state.name,
-      isLocal
-    );
-    this.nameSprite.position.y =
-      BODY_HEIGHT + HEAD_RADIUS * 2 + 0.8;
+    this.nameSprite = this.createNameSprite(state.name, isLocal);
+    this.nameSprite.position.y = BODY_HEIGHT + HEAD_RADIUS * 2 + 0.8;
     this.group.add(this.nameSprite);
 
     // Set initial position
     this.group.position.set(state.x, state.y, state.z);
     this.group.rotation.y = state.rotation;
 
-    // Local player is slightly transparent so camera doesn't clip weird
-    if (isLocal) {
-      // Not transparent, just noted
-    }
-
     scene.add(this.group);
   }
 
-  private createNameSprite(
-    name: string,
-    isLocal: boolean
-  ): THREE.Sprite {
+  private createNameSprite(name: string, isLocal: boolean): THREE.Sprite {
     const canvas = document.createElement("canvas");
     canvas.width = 256;
     canvas.height = 64;
@@ -297,16 +275,45 @@ export class PlayerEntity {
     return sprite;
   }
 
+  updateNameTag(name: string): void {
+    // Remove old sprite
+    const oldSprite = this.nameSprite;
+    this.group.remove(oldSprite);
+    oldSprite.material.map?.dispose();
+    oldSprite.material.dispose();
+
+    this.nameSprite = this.createNameSprite(name, this.isLocal);
+    this.nameSprite.position.y = BODY_HEIGHT + HEAD_RADIUS * 2 + 0.8;
+    this.group.add(this.nameSprite);
+  }
+
   updateFromServer(state: PlayerState, dt: number): void {
     this.targetPos.set(state.x, state.y, state.z);
     this.targetRot = state.rotation;
     this.currentAction = state.action;
 
-    // Interpolate position
-    this.group.position.lerp(
-      this.targetPos,
-      Math.min(1, LERP_SPEED * dt)
+    // Calculate movement speed for leg animation
+    const dx = state.x - this.prevX;
+    const dz = state.z - this.prevZ;
+    const moveDist = Math.sqrt(dx * dx + dz * dz);
+    this.moveSpeed = THREE.MathUtils.lerp(
+      this.moveSpeed,
+      moveDist / Math.max(dt, 0.001),
+      Math.min(1, dt * 8)
     );
+    this.prevX = state.x;
+    this.prevZ = state.z;
+
+    // Interpolate position (for remote players)
+    if (!this.isLocal) {
+      this.group.position.lerp(
+        this.targetPos,
+        Math.min(1, LERP_SPEED * dt)
+      );
+    } else {
+      // Local player uses predicted position directly
+      this.group.position.copy(this.targetPos);
+    }
 
     // Landing check for squash
     if (this.prevY > 0.05 && this.group.position.y <= 0.02) {
@@ -318,8 +325,18 @@ export class PlayerEntity {
     let rotDiff = this.targetRot - this.group.rotation.y;
     while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
     while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-    this.group.rotation.y +=
-      rotDiff * Math.min(1, LERP_SPEED * dt);
+    this.group.rotation.y += rotDiff * Math.min(1, LERP_SPEED * dt);
+
+    // Dodge state tracking
+    if (state.action === "dodging" && !this.dodgeActive) {
+      this.dodgeActive = true;
+      this.dodgeTime = 0;
+    } else if (state.action !== "dodging") {
+      this.dodgeActive = false;
+    }
+    if (this.dodgeActive) {
+      this.dodgeTime += dt;
+    }
 
     // Animate actions
     this.animateActions(state, dt);
@@ -340,9 +357,16 @@ export class PlayerEntity {
     }
   }
 
+  // Set position directly for client-side prediction
+  setPredictedPosition(x: number, y: number, z: number): void {
+    this.group.position.set(x, y, z);
+    this.targetPos.set(x, y, z);
+  }
+
   private animateActions(state: PlayerState, dt: number): void {
     this.idleTime += dt;
     const inAir = this.group.position.y > 0.04;
+    const isMoving = this.moveSpeed > 0.5;
 
     // Landing squash
     if (this.landTimer > 0) {
@@ -355,28 +379,69 @@ export class PlayerEntity {
     const squash = this.landTimer > 0 ? Math.sin(landP * Math.PI) : 0;
     const targetScaleY = 1 - squash * 0.12;
     const targetScaleXZ = 1 + squash * 0.06;
-    this.torso.scale.x = THREE.MathUtils.lerp(
-      this.torso.scale.x,
-      targetScaleXZ,
-      Math.min(1, dt * 10)
-    );
-    this.torso.scale.y = THREE.MathUtils.lerp(
-      this.torso.scale.y,
-      targetScaleY,
-      Math.min(1, dt * 10)
-    );
-    this.torso.scale.z = THREE.MathUtils.lerp(
-      this.torso.scale.z,
-      targetScaleXZ,
-      Math.min(1, dt * 10)
-    );
+    this.torso.scale.x = THREE.MathUtils.lerp(this.torso.scale.x, targetScaleXZ, Math.min(1, dt * 10));
+    this.torso.scale.y = THREE.MathUtils.lerp(this.torso.scale.y, targetScaleY, Math.min(1, dt * 10));
+    this.torso.scale.z = THREE.MathUtils.lerp(this.torso.scale.z, targetScaleXZ, Math.min(1, dt * 10));
 
     // Subtle idle sway
-    const idleBob = inAir
-      ? 0
-      : Math.sin(this.idleTime * 4) * 0.025;
+    const idleBob = inAir ? 0 : Math.sin(this.idleTime * 4) * 0.025;
     this.torso.position.y = idleBob;
 
+    // === LEG ANIMATION ===
+    if (!inAir && isMoving && state.action !== "dodging") {
+      // Walk cycle
+      const walkSpeed = Math.min(this.moveSpeed / 8, 1); // normalize to 0-1
+      this.walkCycle += dt * 10 * walkSpeed; // cycle speed proportional to movement
+      const legSwing = Math.sin(this.walkCycle) * 0.5 * walkSpeed;
+
+      // Left leg forward when right leg back and vice versa
+      this.leftLeg.rotation.x = THREE.MathUtils.lerp(
+        this.leftLeg.rotation.x, legSwing, Math.min(1, dt * 12)
+      );
+      this.rightLeg.rotation.x = THREE.MathUtils.lerp(
+        this.rightLeg.rotation.x, -legSwing, Math.min(1, dt * 12)
+      );
+
+      // Slight vertical bounce when running
+      if (walkSpeed > 0.5) {
+        this.torso.position.y += Math.abs(Math.sin(this.walkCycle)) * 0.04 * walkSpeed;
+      }
+    } else {
+      // Return legs to idle
+      this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, 0, Math.min(1, dt * 8));
+      this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, Math.min(1, dt * 8));
+    }
+
+    // === DODGE ANIMATION ===
+    if (state.action === "dodging") {
+      const dodgeP = Math.min(this.dodgeTime / 0.28, 1);
+      // Lean into dodge direction + tuck
+      this.torso.rotation.x = THREE.MathUtils.lerp(
+        this.torso.rotation.x,
+        -0.7 * (1 - dodgeP),
+        Math.min(1, dt * 15)
+      );
+      // Compress body
+      const dodgeScale = 1 - Math.sin(dodgeP * Math.PI) * 0.15;
+      this.torso.scale.y = THREE.MathUtils.lerp(this.torso.scale.y, dodgeScale, Math.min(1, dt * 12));
+      // Tuck legs
+      this.leftLeg.rotation.x = THREE.MathUtils.lerp(this.leftLeg.rotation.x, -0.6, Math.min(1, dt * 15));
+      this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, -0.6, Math.min(1, dt * 15));
+
+      // Ghost trail effect via opacity (only for non-local, local is always visible)
+      this.bodyMaterial.opacity = 0.6 + dodgeP * 0.4;
+      this.bodyMaterial.transparent = true;
+    } else {
+      if (this.bodyMaterial.transparent && this.hitFlashTime <= 0) {
+        this.bodyMaterial.opacity = THREE.MathUtils.lerp(this.bodyMaterial.opacity, 1, Math.min(1, dt * 10));
+        if (this.bodyMaterial.opacity > 0.99) {
+          this.bodyMaterial.opacity = 1;
+          this.bodyMaterial.transparent = false;
+        }
+      }
+    }
+
+    // === ATTACK ANIMATION ===
     if (state.action === "attacking") {
       const comboStep = Math.max(1, Math.min(3, state.attackIndex || 1));
       const stepSign = comboStep % 2 === 1 ? 1 : -1;
@@ -384,7 +449,6 @@ export class PlayerEntity {
       const elapsed = Date.now() - state.attackTime;
       this.attackAnimProgress = Math.min(elapsed / 600, 1);
 
-      // Sword swing: wind-up, strike, recover
       const p = this.attackAnimProgress;
       const wind = Math.min(p / 0.22, 1);
       const strike = Math.min(Math.max((p - 0.22) / 0.32, 0), 1);
@@ -393,23 +457,17 @@ export class PlayerEntity {
 
       if (comboStep === 3) {
         // Overhead slash
-        this.rightArm.rotation.x =
-          -1.4 + Math.sin(p * Math.PI) * 1.6 * stepPower;
-        this.rightArm.rotation.y =
-          0.2 + Math.sin(p * Math.PI) * -0.3;
-        this.rightArm.rotation.z =
-          0.15 + Math.sin(p * Math.PI) * 0.2;
+        this.rightArm.rotation.x = -1.4 + Math.sin(p * Math.PI) * 1.6 * stepPower;
+        this.rightArm.rotation.y = 0.2 + Math.sin(p * Math.PI) * -0.3;
+        this.rightArm.rotation.z = 0.15 + Math.sin(p * Math.PI) * 0.2;
         this.sword.rotation.x = -0.6 * stepPower;
         this.sword.rotation.z = 0.2;
       } else {
         // Wide side slashes
         this.rightArm.rotation.x = -0.15 + Math.sin(p * Math.PI) * 0.35;
-        this.rightArm.rotation.y =
-          -1.1 * stepSign + swingAngle * 0.75 * stepSign;
-        this.rightArm.rotation.z =
-          0.2 * stepSign + Math.sin(p * Math.PI) * -0.85 * stepSign;
-        this.sword.rotation.z =
-          Math.sin(p * Math.PI) * 1.25 * stepSign * stepPower;
+        this.rightArm.rotation.y = -1.1 * stepSign + swingAngle * 0.75 * stepSign;
+        this.rightArm.rotation.z = 0.2 * stepSign + Math.sin(p * Math.PI) * -0.85 * stepSign;
+        this.sword.rotation.z = Math.sin(p * Math.PI) * 1.25 * stepSign * stepPower;
         this.sword.rotation.x = -0.2 * stepPower;
       }
 
@@ -418,15 +476,18 @@ export class PlayerEntity {
           ? -0.15 + strike * 0.25
           : (-0.35 + strike * 0.7) * stepSign * stepPower;
       this.torso.rotation.y = THREE.MathUtils.lerp(
-        this.torso.rotation.y,
-        torsoYawTarget,
-        Math.min(1, dt * 10)
+        this.torso.rotation.y, torsoYawTarget, Math.min(1, dt * 10)
       );
       this.torso.rotation.x = THREE.MathUtils.lerp(
-        this.torso.rotation.x,
-        inAir ? -0.3 : 0.05,
-        Math.min(1, dt * 8)
+        this.torso.rotation.x, inAir ? -0.3 : 0.05, Math.min(1, dt * 8)
       );
+
+      // Attack lean - slight forward lean during strike phase
+      if (strike > 0 && strike < 1) {
+        this.torso.position.z = -0.1 * Math.sin(strike * Math.PI);
+      } else {
+        this.torso.position.z = THREE.MathUtils.lerp(this.torso.position.z, 0, Math.min(1, dt * 8));
+      }
     } else {
       // Return to idle
       this.rightArm.rotation.x += (0 - this.rightArm.rotation.x) * 8 * dt;
@@ -434,34 +495,35 @@ export class PlayerEntity {
       this.rightArm.rotation.y += (0 - this.rightArm.rotation.y) * 8 * dt;
       this.sword.rotation.z += (0 - this.sword.rotation.z) * 8 * dt;
       this.attackAnimProgress = 0;
+      this.torso.position.z = THREE.MathUtils.lerp(this.torso.position.z, 0, Math.min(1, dt * 8));
     }
 
+    // === BLOCK ANIMATION ===
     if (state.action === "blocking") {
-      // Raise shield in front
-      this.leftArm.rotation.x +=
-        (-1.35 - this.leftArm.rotation.x) * 10 * dt;
-      this.leftArm.rotation.z +=
-        (0.3 - this.leftArm.rotation.z) * 10 * dt;
-      this.leftArm.position.z +=
-        (-0.35 - this.leftArm.position.z) * 8 * dt;
-      this.shield.rotation.z +=
-        (-0.18 - this.shield.rotation.z) * 10 * dt;
+      this.leftArm.rotation.x += (-1.35 - this.leftArm.rotation.x) * 10 * dt;
+      this.leftArm.rotation.z += (0.3 - this.leftArm.rotation.z) * 10 * dt;
+      this.leftArm.position.z += (-0.35 - this.leftArm.position.z) * 8 * dt;
+      this.shield.rotation.z += (-0.18 - this.shield.rotation.z) * 10 * dt;
+
+      // Block impact shake
+      if (this.blockImpactTime > 0) {
+        this.blockImpactTime -= dt;
+        const shake = Math.sin(this.blockImpactTime * 60) * 0.05 * (this.blockImpactTime / 0.2);
+        this.leftArm.position.x = 0.55 + shake;
+      }
     } else {
-      this.leftArm.rotation.x +=
-        (0 - this.leftArm.rotation.x) * 8 * dt;
-      this.leftArm.rotation.z +=
-        (0 - this.leftArm.rotation.z) * 8 * dt;
-      this.leftArm.position.z +=
-        (0 - this.leftArm.position.z) * 8 * dt;
-      this.shield.rotation.z +=
-        (0 - this.shield.rotation.z) * 8 * dt;
+      this.leftArm.rotation.x += (0 - this.leftArm.rotation.x) * 8 * dt;
+      this.leftArm.rotation.z += (0 - this.leftArm.rotation.z) * 8 * dt;
+      this.leftArm.position.z += (0 - this.leftArm.position.z) * 8 * dt;
+      this.shield.rotation.z += (0 - this.shield.rotation.z) * 8 * dt;
+      this.leftArm.position.x = THREE.MathUtils.lerp(this.leftArm.position.x, 0.55, Math.min(1, dt * 8));
     }
 
     // Airborne tilt
-    if (state.action !== "attacking") {
+    if (state.action !== "attacking" && state.action !== "dodging") {
       this.torso.rotation.x = THREE.MathUtils.lerp(
         this.torso.rotation.x,
-        inAir ? -0.35 : 0,
+        inAir ? -0.35 : (isMoving ? -0.08 : 0),
         Math.min(1, dt * 6)
       );
       this.torso.rotation.y = THREE.MathUtils.lerp(
@@ -476,18 +538,25 @@ export class PlayerEntity {
     this.hitFlashTime = 0.3;
   }
 
+  flashBlockImpact(): void {
+    this.blockImpactTime = 0.2;
+  }
+
   getPosition(): THREE.Vector3 {
     return this.group.position;
   }
 
+  getGroup(): THREE.Group {
+    return this.group;
+  }
+
   destroy(scene: THREE.Scene): void {
     scene.remove(this.group);
-    // Dispose geometries and materials
     this.group.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.geometry.dispose();
         if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
+          for (const m of child.material) m.dispose();
         } else {
           child.material.dispose();
         }

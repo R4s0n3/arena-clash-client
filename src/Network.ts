@@ -6,6 +6,8 @@ export class Network {
   private handlers: Map<string, MessageHandler[]> = new Map();
   private url: string;
   private reconnectDelay = 1000;
+  private lastSendTime = 0;
+  private static readonly MIN_SEND_INTERVAL = 16; // ~60 msgs/sec max
 
   constructor(url: string) {
     this.url = url;
@@ -25,7 +27,9 @@ export class Network {
         const msg = JSON.parse(event.data);
         const handlers = this.handlers.get(msg.type);
         if (handlers) {
-          handlers.forEach((h) => h(msg));
+          for (let i = 0; i < handlers.length; i++) {
+            handlers[i](msg);
+          }
         }
       } catch {
         // ignore
@@ -46,8 +50,7 @@ export class Network {
       );
     };
 
-    this.ws.onerror = (event) => {
-      console.error("WebSocket error", event);
+    this.ws.onerror = () => {
       this.ws?.close();
     };
   }
@@ -63,5 +66,18 @@ export class Network {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  // Rate-limited send for high-frequency messages (e.g., move)
+  sendThrottled(msg: object): void {
+    const now = performance.now();
+    if (now - this.lastSendTime >= Network.MIN_SEND_INTERVAL) {
+      this.lastSendTime = now;
+      this.send(msg);
+    }
+  }
+
+  get connected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 }
