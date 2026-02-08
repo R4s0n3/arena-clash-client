@@ -70,8 +70,16 @@ export class Game {
     this.ui = new UI();
 
     // Network
-    const wsUrl = import.meta.env.VITE_WS_URL as string;
-    this.network = new Network(wsUrl); this.network = new Network(wsUrl);
+    const envUrl = import.meta.env.VITE_WS_URL as
+      | string
+      | undefined;
+    const wsUrl =
+      envUrl && envUrl.trim() !== ""
+        ? envUrl
+        : `${window.location.protocol === "https:" ? "wss" : "ws"}://${
+            window.location.host
+          }`;
+    this.network = new Network(wsUrl);
     this.setupNetworkHandlers();
 
     // Resize
