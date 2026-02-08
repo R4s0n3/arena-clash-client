@@ -52,8 +52,8 @@ export class Game {
 
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1a2e);
-    this.scene.fog = new THREE.Fog(0x1a1a2e, 40, 65);
+    this.scene.background = new THREE.Color(0x0b0f14);
+    this.scene.fog = new THREE.Fog(0x0b0f14, 38, 68);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
@@ -210,6 +210,9 @@ export class Game {
       }
       if (this.input.consumeBlockEnd()) {
         this.network.send({ type: "blockEnd" });
+      }
+      if (this.input.consumeJump()) {
+        this.network.send({ type: "jump" });
       }
     }
 

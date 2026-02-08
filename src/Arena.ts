@@ -15,9 +15,9 @@ export class Arena {
   ): void {
     const groundGeo = new THREE.CircleGeometry(radius, 64);
     const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x3d3d3d,
-      roughness: 0.9,
-      metalness: 0.1,
+      color: 0x2b3036,
+      roughness: 0.95,
+      metalness: 0.05,
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
@@ -30,8 +30,8 @@ export class Arena {
       64
     );
     const ringMat = new THREE.MeshStandardMaterial({
-      color: 0x8b4513,
-      roughness: 0.7,
+      color: 0x6b4b2b,
+      roughness: 0.8,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
@@ -40,8 +40,8 @@ export class Arena {
 
     const centerGeo = new THREE.CircleGeometry(2, 32);
     const centerMat = new THREE.MeshStandardMaterial({
-      color: 0x555555,
-      roughness: 0.8,
+      color: 0x3b4149,
+      roughness: 0.85,
     });
     const center = new THREE.Mesh(centerGeo, centerMat);
     center.rotation.x = -Math.PI / 2;
@@ -95,9 +95,9 @@ export class Arena {
       true
     );
     const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x555555,
-      roughness: 0.7,
-      metalness: 0.3,
+      color: 0x454b53,
+      roughness: 0.75,
+      metalness: 0.25,
       side: THREE.BackSide,
     });
     const wall = new THREE.Mesh(wallGeo, wallMat);
@@ -108,9 +108,9 @@ export class Arena {
     // Top rim
     const rimGeo = new THREE.TorusGeometry(radius, 0.15, 8, 64);
     const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x8b4513,
-      metalness: 0.6,
-      roughness: 0.4,
+      color: 0x8c6a3e,
+      metalness: 0.5,
+      roughness: 0.45,
     });
     const rim = new THREE.Mesh(rimGeo, rimMat);
     rim.rotation.x = Math.PI / 2;
@@ -131,9 +131,9 @@ export class Arena {
         8
       );
       const pillarMat = new THREE.MeshStandardMaterial({
-        color: 0x666666,
-        roughness: 0.6,
-        metalness: 0.4,
+        color: 0x5a6068,
+        roughness: 0.65,
+        metalness: 0.35,
       });
       const pillar = new THREE.Mesh(pillarGeo, pillarMat);
       pillar.position.set(px, (wallHeight + 0.5) / 2, pz);
@@ -144,8 +144,8 @@ export class Arena {
       // Torch flame (point light) on every other pillar
       if (i % 2 === 0) {
         const torchLight = new THREE.PointLight(
-          0xff6600,
-          2,
+          0xff7a3d,
+          2.2,
           15
         );
         torchLight.position.set(
@@ -158,23 +158,36 @@ export class Arena {
         // Flame visual
         const flameGeo = new THREE.SphereGeometry(0.12, 8, 6);
         const flameMat = new THREE.MeshBasicMaterial({
-          color: 0xff8800,
+          color: 0xffa35a,
         });
         const flame = new THREE.Mesh(flameGeo, flameMat);
         flame.position.copy(torchLight.position);
         scene.add(flame);
+      } else {
+        // Banner on alternate pillars
+        const bannerGeo = new THREE.PlaneGeometry(1.4, 2.2);
+        const bannerMat = new THREE.MeshStandardMaterial({
+          color: 0x4a2b1a,
+          roughness: 0.9,
+          metalness: 0.05,
+          side: THREE.DoubleSide,
+        });
+        const banner = new THREE.Mesh(bannerGeo, bannerMat);
+        banner.position.set(px * 0.92, 1.6, pz * 0.92);
+        banner.lookAt(0, 1.6, 0);
+        scene.add(banner);
       }
     }
   }
 
   private buildLighting(scene: THREE.Scene): void {
     // Ambient
-    const ambient = new THREE.AmbientLight(0x404060, 0.6);
+    const ambient = new THREE.AmbientLight(0x40444f, 0.55);
     scene.add(ambient);
 
     // Main directional (sun/moon)
-    const dirLight = new THREE.DirectionalLight(0xffeedd, 1.0);
-    dirLight.position.set(15, 25, 10);
+    const dirLight = new THREE.DirectionalLight(0xffe0c4, 1.0);
+    dirLight.position.set(18, 24, 12);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
@@ -189,16 +202,16 @@ export class Arena {
 
     // Hemisphere light for sky/ground color blending
     const hemi = new THREE.HemisphereLight(
-      0x6688cc,
-      0x443322,
-      0.4
+      0x5a7aa2,
+      0x3a2a1d,
+      0.35
     );
     scene.add(hemi);
 
     // Central overhead light
     const centerLight = new THREE.PointLight(
-      0xffffee,
-      1.5,
+      0xfff0d8,
+      1.6,
       40
     );
     centerLight.position.set(0, 12, 0);

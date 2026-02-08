@@ -5,11 +5,18 @@ export class InputManager {
   private pendingAttack = false;
   private pendingBlockStart = false;
   private pendingBlockEnd = false;
+  private pendingJump = false;
   private isBlocking = false;
   private isPointerLocked = false;
 
   constructor() {
     document.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (!e.repeat) {
+          this.pendingJump = true;
+        }
+      }
       this.keys.add(e.code);
     });
 
@@ -94,6 +101,14 @@ export class InputManager {
   consumeBlockEnd(): boolean {
     if (this.pendingBlockEnd) {
       this.pendingBlockEnd = false;
+      return true;
+    }
+    return false;
+  }
+
+  consumeJump(): boolean {
+    if (this.pendingJump) {
+      this.pendingJump = false;
       return true;
     }
     return false;
