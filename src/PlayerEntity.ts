@@ -556,7 +556,7 @@ export class PlayerEntity {
     if (inAir && state.action !== "attacking" && state.action !== "dodging" && state.action !== "blocking") {
       this.rLeg.rotation.x = approach(this.rLeg.rotation.x, -0.15, 6, dt);
       this.lLeg.rotation.x = approach(this.lLeg.rotation.x, 0.1, 6, dt);
-      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.5 + recoil, 6, dt);
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, 0.45 + recoil, 6, dt);
       this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.5, 6, dt);
       this.lArm.rotation.y = approach(this.lArm.rotation.y, 0, 6, dt);
     }
