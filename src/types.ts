@@ -56,6 +56,9 @@ export interface HitMessage extends ServerMessage {
   damage: number;
   targetHealth: number;
   blocked: boolean;
+  kbX: number;
+  kbZ: number;
+  kbForce: number;
 }
 
 export interface KillMessage extends ServerMessage {

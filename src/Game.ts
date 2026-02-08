@@ -7,6 +7,7 @@ import { Arena } from "./Arena";
 import { UI } from "./UI";
 import { SoundManager } from "./SoundManager";
 import { VFX } from "./VFX";
+import { CameraController } from "./CameraController";
 import type {
   PlayerState,
   WelcomeMessage,
@@ -19,9 +20,6 @@ import type {
   ChatMessage,
 } from "./types";
 
-const CAMERA_DISTANCE = 11.5;
-const CAMERA_HEIGHT = 5.8;
-const CAMERA_LERP = 0.08;
 const PLAYER_SPEED = 8;
 
 // Client-side prediction input record
@@ -33,10 +31,19 @@ interface InputRecord {
   dt: number;
 }
 
+// Floating damage number
+interface DamageNumber {
+  element: HTMLDivElement;
+  worldPos: THREE.Vector3;
+  life: number;
+  velocity: number;
+}
+
 export class Game {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
+  private cameraCtrl!: CameraController;
   private network: Network;
   private input: InputManager;
   private ui: UI;
@@ -50,7 +57,7 @@ export class Game {
   private clock = new THREE.Clock();
   private arenaRadius = 30;
 
-  // Client-side prediction state
+  // Client-side prediction
   private predictedX = 0;
   private predictedZ = 0;
   private predictedY = 0;
@@ -59,11 +66,15 @@ export class Game {
   private inputSeq = 0;
   private lastServerAction: string = "idle";
 
-  // Player names cache for kill feed
+  // Player names cache
   private playerNames: Map<string, string> = new Map();
 
-  // Raycaster for camera collision
-  private cameraRaycaster = new THREE.Raycaster();
+  // Hit-stop: when > 0, freeze entity animations
+  private hitStopTimer = 0;
+
+  // Damage numbers
+  private damageNumbers: DamageNumber[] = [];
+  private damageContainer: HTMLDivElement;
 
   constructor() {
     // Renderer
@@ -88,6 +99,7 @@ export class Game {
       0.1,
       200
     );
+    this.cameraCtrl = new CameraController(this.camera);
 
     // Input
     this.input = new InputManager();
@@ -97,6 +109,11 @@ export class Game {
 
     // Sound
     this.sound = new SoundManager();
+
+    // Damage number container
+    this.damageContainer = document.createElement("div");
+    this.damageContainer.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:15;overflow:hidden;";
+    document.body.appendChild(this.damageContainer);
 
     // Network
     const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
@@ -116,7 +133,6 @@ export class Game {
   }
 
   start(): void {
-    // Initialize audio on user interaction
     this.sound.init();
     this.animate();
   }
@@ -156,17 +172,14 @@ export class Game {
       for (const ps of msg.players) {
         this.serverStates.set(ps.id, ps);
 
-        // Update name tag if name changed
+        // Update name tag if changed
         const oldName = this.playerNames.get(ps.id);
         if (oldName && oldName !== ps.name) {
           const entity = this.players.get(ps.id);
-          if (entity) {
-            entity.updateNameTag(ps.name);
-          }
+          if (entity) entity.updateNameTag(ps.name);
         }
         this.playerNames.set(ps.id, ps.name);
 
-        // Server reconciliation for local player
         if (ps.id === this.myId) {
           this.reconcileWithServer(ps);
         }
@@ -174,7 +187,6 @@ export class Game {
       this.ui.updateScoreboard(msg.players, this.myId);
       this.ui.updatePlayerCount(msg.players.length);
 
-      // Update local player stamina bar
       const myState = msg.players.find((p) => p.id === this.myId);
       if (myState) {
         this.ui.updateStamina(myState.stamina, myState.maxStamina);
@@ -193,19 +205,40 @@ export class Game {
           target.flashBlockImpact();
           this.sound.playBlock();
           this.vfx?.spawnBlockSparks(targetPos);
+          // Small camera shake on block
+          if (msg.targetId === this.myId) {
+            this.cameraCtrl.shake(0.08, 0.12);
+          }
         } else {
           target.flashHit();
           this.sound.playHit();
+
+          // Knockback
+          target.applyKnockback(msg.kbX, msg.kbZ, msg.kbForce);
+
+          // Hit-stop: brief freeze frame
+          this.hitStopTimer = 0.06;
+
+          // Camera shake on hit (stronger if we're the target)
+          if (msg.targetId === this.myId) {
+            this.cameraCtrl.shake(0.2 + msg.damage * 0.005, 0.2);
+          } else if (msg.attackerId === this.myId) {
+            this.cameraCtrl.shake(0.08, 0.1);
+            this.cameraCtrl.punch(msg.kbX, msg.kbZ, 0.3);
+          }
+
+          // VFX sparks
           if (attacker) {
             const attackerPos = attacker.getPosition();
             const dir = new THREE.Vector3(
-              targetPos.x - attackerPos.x,
-              0,
-              targetPos.z - attackerPos.z
+              targetPos.x - attackerPos.x, 0, targetPos.z - attackerPos.z
             ).normalize();
             this.vfx?.spawnHitSparks(targetPos, dir);
             this.vfx?.spawnBloodSplatter(targetPos, dir);
           }
+
+          // Floating damage number
+          this.spawnDamageNumber(targetPos, msg.damage, false);
         }
       }
 
@@ -221,12 +254,12 @@ export class Game {
         this.vfx?.spawnDeathBurst(targetEntity.getPosition());
       }
 
-      // Kill feed
       this.ui.addKillFeedEntry(msg.killerName, msg.targetName);
 
       if (msg.targetId === this.myId) {
         this.ui.showDeath();
         this.sound.playDeath();
+        this.cameraCtrl.shake(0.4, 0.5);
       } else if (msg.killerId === this.myId) {
         this.sound.playKill();
       }
@@ -237,7 +270,6 @@ export class Game {
         this.ui.hideDeath();
         this.ui.updateHealth(100, 100);
         this.ui.updateStamina(100, 100);
-        // Reset prediction state
         this.predictedX = msg.x;
         this.predictedZ = msg.z;
         this.predictedY = 0;
@@ -267,41 +299,59 @@ export class Game {
 
   private animate = (): void => {
     requestAnimationFrame(this.animate);
-    const dt = Math.min(this.clock.getDelta(), 0.1); // cap dt
-    this.update(dt);
+    const rawDt = Math.min(this.clock.getDelta(), 0.1);
+
+    // Hit-stop: reduce dt to near-zero for freeze-frame effect
+    let dt = rawDt;
+    if (this.hitStopTimer > 0) {
+      this.hitStopTimer -= rawDt;
+      dt = rawDt * 0.05; // near-freeze, not fully zero so things still move slightly
+    }
+
+    this.update(dt, rawDt);
     this.vfx?.update(dt);
     this.arena?.update(dt);
+
+    // Update sword trail for local player
+    const trailEntity = this.players.get(this.myId);
+    if (trailEntity && this.vfx) {
+      const myState = this.serverStates.get(this.myId);
+      this.vfx.updateSwordTrail(trailEntity.getSwordTip(), myState?.action === "attacking");
+    }
+    this.updateDamageNumbers(rawDt);
     this.renderer.render(this.scene, this.camera);
   };
 
-  private update(dt: number): void {
-    this.input.update(dt);
+  private update(dt: number, rawDt: number): void {
+    this.input.update(rawDt); // input always uses real dt
 
     if (this.myId) {
       const { forward, right } = this.input.getMovement();
       const rotation = this.input.getRotationY();
       this.predictedRotation = rotation;
 
-      // Client-side prediction: apply movement locally
+      // Calculate local move speed for entity animation (from input, not server deltas)
+      const inputMag = Math.sqrt(forward * forward + right * right);
+      const localSpeed = inputMag * PLAYER_SPEED * (this.lastServerAction === "blocking" ? 0.55 : 1.0);
       const canMove = this.lastServerAction !== "attacking" && this.lastServerAction !== "dodging";
+      const myEntity = this.players.get(this.myId);
+      if (myEntity) {
+        myEntity.setLocalMoveSpeed(canMove ? localSpeed : 0);
+      }
+
+      // Client-side prediction
       if (canMove && (forward !== 0 || right !== 0)) {
         const sin = Math.sin(rotation);
         const cos = Math.cos(rotation);
         let dx = right * cos - forward * sin;
         let dz = right * sin - forward * cos;
         const len = Math.sqrt(dx * dx + dz * dz);
-        if (len > 1) {
-          dx /= len;
-          dz /= len;
-        }
+        if (len > 1) { dx /= len; dz /= len; }
         const speedMul = this.lastServerAction === "blocking" ? 0.55 : 1.0;
-        this.predictedX += dx * PLAYER_SPEED * speedMul * dt;
-        this.predictedZ += dz * PLAYER_SPEED * speedMul * dt;
+        this.predictedX += dx * PLAYER_SPEED * speedMul * rawDt; // use raw dt for prediction
+        this.predictedZ += dz * PLAYER_SPEED * speedMul * rawDt;
 
-        // Clamp to arena
-        const dist = Math.sqrt(
-          this.predictedX * this.predictedX + this.predictedZ * this.predictedZ
-        );
+        const dist = Math.sqrt(this.predictedX * this.predictedX + this.predictedZ * this.predictedZ);
         if (dist > this.arenaRadius - 1) {
           const scale = (this.arenaRadius - 1) / dist;
           this.predictedX *= scale;
@@ -309,67 +359,36 @@ export class Game {
         }
       }
 
-      // Send input to server with sequence number
+      // Send input
       this.inputSeq++;
-      const inputRecord: InputRecord = {
-        seq: this.inputSeq,
-        forward,
-        right,
-        rotation,
-        dt,
-      };
-      this.pendingInputs.push(inputRecord);
-
-      // Keep only last 2 seconds of inputs
-      const maxPending = 120;
-      if (this.pendingInputs.length > maxPending) {
-        this.pendingInputs = this.pendingInputs.slice(-maxPending);
+      this.pendingInputs.push({ seq: this.inputSeq, forward, right, rotation, dt: rawDt });
+      if (this.pendingInputs.length > 120) {
+        this.pendingInputs = this.pendingInputs.slice(-120);
       }
 
       this.network.sendThrottled({
-        type: "move",
-        seq: this.inputSeq,
-        forward,
-        right,
-        rotation,
-        dt,
+        type: "move", seq: this.inputSeq, forward, right, rotation, dt: rawDt,
       });
 
-      // Handle actions
+      // Actions
       if (this.input.consumeAttack()) {
         this.network.send({ type: "attack" });
-        // Use current server attack index for combo-varied sound
         const myState = this.serverStates.get(this.myId);
         const comboStep = myState?.action === "attacking" ? Math.min(3, (myState.attackIndex || 0) + 1) : 1;
         this.sound.playSwing(comboStep);
       }
-      if (this.input.consumeBlockStart()) {
-        this.network.send({ type: "blockStart" });
-      }
-      if (this.input.consumeBlockEnd()) {
-        this.network.send({ type: "blockEnd" });
-      }
-      if (this.input.consumeJump()) {
-        this.network.send({ type: "jump" });
-        this.sound.playJump();
-      }
-      if (this.input.consumeDodge()) {
-        this.network.send({ type: "dodge" });
-        this.sound.playDodge();
-      }
+      if (this.input.consumeBlockStart()) this.network.send({ type: "blockStart" });
+      if (this.input.consumeBlockEnd()) this.network.send({ type: "blockEnd" });
+      if (this.input.consumeJump()) { this.network.send({ type: "jump" }); this.sound.playJump(); }
+      if (this.input.consumeDodge()) { this.network.send({ type: "dodge" }); this.sound.playDodge(); }
 
-      // Update local player with predicted position
-      const myEntity = this.players.get(this.myId);
+      // Set predicted position
       if (myEntity) {
-        myEntity.setPredictedPosition(
-          this.predictedX,
-          this.predictedY,
-          this.predictedZ
-        );
+        myEntity.setPredictedPosition(this.predictedX, this.predictedY, this.predictedZ);
       }
     }
 
-    // Update player entities from server state
+    // Update entities
     for (const [id, state] of this.serverStates) {
       let entity = this.players.get(id);
       if (!entity) {
@@ -378,47 +397,40 @@ export class Game {
       }
       if (entity) {
         if (id === this.myId) {
-          // For local player, use predicted position but server state for actions/animations
-          const predictedState = { ...state };
-          predictedState.x = this.predictedX;
-          predictedState.y = this.predictedY;
-          predictedState.z = this.predictedZ;
-          predictedState.rotation = this.predictedRotation;
-          entity.updateFromServer(predictedState, dt);
+          const s = { ...state };
+          s.x = this.predictedX;
+          s.y = this.predictedY;
+          s.z = this.predictedZ;
+          s.rotation = this.predictedRotation;
+          entity.updateFromServer(s, dt);
         } else {
           entity.updateFromServer(state, dt);
         }
       }
     }
 
-    // Remove entities that no longer have server state
+    // Clean up stale entities
     for (const [id] of this.players) {
       if (!this.serverStates.has(id)) {
         this.removePlayerEntity(id);
       }
     }
 
-    // Update camera
-    const myEntity = this.players.get(this.myId);
-    if (myEntity) {
-      this.updateCamera(myEntity, dt);
+    // Camera (always use real dt for smooth follow)
+    const myEntity2 = this.players.get(this.myId);
+    if (myEntity2) {
+      this.cameraCtrl.update(myEntity2.getPosition(), this.input.getRotationY(), rawDt);
     }
   }
 
   private reconcileWithServer(serverState: PlayerState): void {
     const lastProcessedSeq = serverState.lastSeq;
+    this.pendingInputs = this.pendingInputs.filter((i) => i.seq > lastProcessedSeq);
 
-    // Remove inputs that the server has already processed
-    this.pendingInputs = this.pendingInputs.filter(
-      (input) => input.seq > lastProcessedSeq
-    );
-
-    // Start from server authoritative position
     this.predictedX = serverState.x;
     this.predictedZ = serverState.z;
     this.predictedY = serverState.y;
 
-    // Re-apply unprocessed inputs
     const canMove = serverState.action !== "attacking" && serverState.action !== "dodging";
     if (canMove) {
       for (const input of this.pendingInputs) {
@@ -427,17 +439,12 @@ export class Game {
         let dx = input.right * cos - input.forward * sin;
         let dz = input.right * sin - input.forward * cos;
         const len = Math.sqrt(dx * dx + dz * dz);
-        if (len > 1) {
-          dx /= len;
-          dz /= len;
-        }
+        if (len > 1) { dx /= len; dz /= len; }
         const speedMul = serverState.action === "blocking" ? 0.55 : 1.0;
         this.predictedX += dx * PLAYER_SPEED * speedMul * input.dt;
         this.predictedZ += dz * PLAYER_SPEED * speedMul * input.dt;
 
-        const dist = Math.sqrt(
-          this.predictedX * this.predictedX + this.predictedZ * this.predictedZ
-        );
+        const dist = Math.sqrt(this.predictedX * this.predictedX + this.predictedZ * this.predictedZ);
         if (dist > this.arenaRadius - 1) {
           const scale = (this.arenaRadius - 1) / dist;
           this.predictedX *= scale;
@@ -447,70 +454,57 @@ export class Game {
     }
   }
 
-  private updateCamera(player: PlayerEntity, _dt: number): void {
-    const pos = player.getPosition();
-    const rot = this.input.getRotationY();
+  // ===================== DAMAGE NUMBERS =====================
+  private spawnDamageNumber(worldPos: THREE.Vector3, damage: number, isBlocked: boolean): void {
+    const el = document.createElement("div");
+    el.textContent = `-${damage}`;
+    el.style.cssText = `
+      position:absolute;font-family:'Cinzel',serif;font-weight:700;
+      font-size:${isBlocked ? '14px' : '18px'};
+      color:${isBlocked ? '#8899aa' : (damage >= 25 ? '#ff4444' : '#ffaa44')};
+      text-shadow:0 2px 6px rgba(0,0,0,0.8);
+      pointer-events:none;transition:none;white-space:nowrap;
+    `;
+    this.damageContainer.appendChild(el);
 
-    const forward = new THREE.Vector3(
-      -Math.sin(rot),
-      0,
-      -Math.cos(rot)
-    );
-
-    let camDist = CAMERA_DISTANCE;
-
-    // Camera collision: cast ray from player toward camera position
-    const targetCamPos = new THREE.Vector3(
-      pos.x - forward.x * CAMERA_DISTANCE,
-      pos.y + CAMERA_HEIGHT,
-      pos.z - forward.z * CAMERA_DISTANCE
-    );
-
-    const playerHead = new THREE.Vector3(pos.x, pos.y + 1.5, pos.z);
-    const camDir = new THREE.Vector3().subVectors(targetCamPos, playerHead).normalize();
-    const maxDist = playerHead.distanceTo(targetCamPos);
-
-    this.cameraRaycaster.set(playerHead, camDir);
-    this.cameraRaycaster.far = maxDist;
-
-    // Only check against arena meshes (not players or particles)
-    const intersectable: THREE.Object3D[] = [];
-    this.scene.traverse((child) => {
-      if (
-        child instanceof THREE.Mesh &&
-        child.geometry &&
-        !(child.parent instanceof THREE.Group && this.isPlayerGroup(child.parent))
-      ) {
-        intersectable.push(child);
-      }
+    this.damageNumbers.push({
+      element: el,
+      worldPos: worldPos.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 0.5, 2.2, (Math.random() - 0.5) * 0.5
+      )),
+      life: 1.0,
+      velocity: 1.5 + Math.random() * 0.5,
     });
-
-    const intersections = this.cameraRaycaster.intersectObjects(intersectable, false);
-    if (intersections.length > 0) {
-      const closestDist = intersections[0].distance;
-      if (closestDist < maxDist) {
-        camDist = Math.max(2, closestDist * 0.9); // keep 10% padding
-        // Recalculate with shorter distance
-        const ratio = camDist / CAMERA_DISTANCE;
-        targetCamPos.set(
-          pos.x - forward.x * camDist,
-          pos.y + CAMERA_HEIGHT * ratio,
-          pos.z - forward.z * camDist
-        );
-      }
-    }
-
-    this.camera.position.lerp(targetCamPos, CAMERA_LERP);
-    this.camera.lookAt(pos.x, pos.y + 1.5, pos.z);
   }
 
-  private isPlayerGroup(obj: THREE.Object3D): boolean {
-    for (const [, entity] of this.players) {
-      if (entity.getGroup() === obj || entity.getGroup().parent === obj) {
-        return true;
+  private updateDamageNumbers(dt: number): void {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const _v = new THREE.Vector3();
+
+    for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
+      const dn = this.damageNumbers[i];
+      dn.life -= dt;
+      dn.worldPos.y += dn.velocity * dt;
+      dn.velocity -= dt * 2; // decelerate
+
+      if (dn.life <= 0) {
+        dn.element.remove();
+        this.damageNumbers.splice(i, 1);
+        continue;
       }
+
+      // Project world position to screen
+      _v.copy(dn.worldPos);
+      _v.project(this.camera);
+      const sx = (0.5 + _v.x / 2) * w;
+      const sy = (0.5 - _v.y / 2) * h;
+
+      dn.element.style.left = `${sx}px`;
+      dn.element.style.top = `${sy}px`;
+      dn.element.style.opacity = `${Math.min(1, dn.life * 2)}`;
+      dn.element.style.transform = `translate(-50%,-50%) scale(${0.8 + dn.life * 0.4})`;
     }
-    return false;
   }
 
   setPlayerName(name: string): void {
