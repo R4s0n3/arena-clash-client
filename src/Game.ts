@@ -17,9 +17,10 @@ import type {
   ChatMessage,
 } from "./types";
 
-const CAMERA_DISTANCE = 10;
-const CAMERA_HEIGHT = 6;
-const CAMERA_LERP = 0.1;
+const CAMERA_DISTANCE = 11.5;
+const CAMERA_HEIGHT = 5.8;
+const CAMERA_SIDE = 0.0;
+const CAMERA_LERP = 0.08;
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
@@ -189,6 +190,7 @@ export class Game {
   };
 
   private update(dt: number): void {
+    this.input.update(dt);
     // Send input to server
     if (this.myId) {
       const { forward, right } = this.input.getMovement();
@@ -246,10 +248,20 @@ export class Game {
     const pos = player.getPosition();
     const rot = this.input.getRotationY();
 
+    const forward = new THREE.Vector3(
+      -Math.sin(rot),
+      0,
+      -Math.cos(rot)
+    );
+    const right = new THREE.Vector3(
+      forward.z,
+      0,
+      -forward.x
+    );
     const targetX =
-      pos.x + Math.sin(rot) * CAMERA_DISTANCE;
+      pos.x - forward.x * CAMERA_DISTANCE + right.x * CAMERA_SIDE;
     const targetZ =
-      pos.z + Math.cos(rot) * CAMERA_DISTANCE;
+      pos.z - forward.z * CAMERA_DISTANCE + right.z * CAMERA_SIDE;
     const targetY = pos.y + CAMERA_HEIGHT;
 
     this.camera.position.lerp(

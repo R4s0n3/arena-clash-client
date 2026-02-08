@@ -377,6 +377,9 @@ export class PlayerEntity {
     this.torso.position.y = idleBob;
 
     if (state.action === "attacking") {
+      const comboStep = Math.max(1, Math.min(3, state.attackIndex || 1));
+      const stepSign = comboStep % 2 === 1 ? 1 : -1;
+      const stepPower = comboStep === 3 ? 1.2 : 1.0;
       const elapsed = Date.now() - state.attackTime;
       this.attackAnimProgress = Math.min(elapsed / 600, 1);
 
@@ -387,15 +390,19 @@ export class PlayerEntity {
       const recover = Math.min(Math.max((p - 0.54) / 0.46, 0), 1);
       const swingAngle = -1.25 * wind + 3.0 * strike - 0.9 * recover;
 
-      this.rightArm.rotation.x = swingAngle;
-      this.rightArm.rotation.z = -0.25 + Math.sin(p * Math.PI) * 0.55;
-      this.rightArm.rotation.y = -0.2 + Math.sin(p * Math.PI) * -0.35;
-      this.sword.rotation.z = Math.sin(p * Math.PI) * 0.75;
-      this.sword.rotation.x = Math.sin(p * Math.PI) * -0.2;
+      // Side slash: primary rotation around Y/Z, minimal X lift
+      this.rightArm.rotation.x = -0.2 + Math.sin(p * Math.PI) * 0.25;
+      this.rightArm.rotation.y =
+        -0.7 * stepSign + swingAngle * 0.55 * stepSign;
+      this.rightArm.rotation.z =
+        0.12 * stepSign + Math.sin(p * Math.PI) * -0.6 * stepSign;
+      this.sword.rotation.z =
+        Math.sin(p * Math.PI) * 0.9 * stepSign * stepPower;
+      this.sword.rotation.x = -0.15 * stepPower;
 
       this.torso.rotation.y = THREE.MathUtils.lerp(
         this.torso.rotation.y,
-        -0.25 + strike * 0.55,
+        (-0.25 + strike * 0.55) * stepSign * stepPower,
         Math.min(1, dt * 10)
       );
       this.torso.rotation.x = THREE.MathUtils.lerp(

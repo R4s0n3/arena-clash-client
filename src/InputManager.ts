@@ -2,12 +2,18 @@
 export class InputManager {
   private keys: Set<string> = new Set();
   private rotationY = 0;
+  private moveForward = 0;
+  private moveRight = 0;
   private pendingAttack = false;
   private pendingBlockStart = false;
   private pendingBlockEnd = false;
   private pendingJump = false;
   private isBlocking = false;
   private isPointerLocked = false;
+
+  private static readonly ACCEL = 16;
+  private static readonly DECEL = 20;
+  private static readonly DEADZONE = 0.01;
 
   constructor() {
     document.addEventListener("keydown", (e) => {
@@ -62,20 +68,43 @@ export class InputManager {
     });
   }
 
-  getMovement(): { forward: number; right: number } {
-    let forward = 0;
-    let right = 0;
+  update(dt: number): void {
+    let targetForward = 0;
+    let targetRight = 0;
 
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp"))
-      forward += 1;
+      targetForward += 1;
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown"))
-      forward -= 1;
+      targetForward -= 1;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft"))
-      right -= 1;
+      targetRight -= 1;
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight"))
-      right += 1;
+      targetRight += 1;
 
-    return { forward, right };
+    const fAccel =
+      targetForward !== 0
+        ? InputManager.ACCEL
+        : InputManager.DECEL;
+    const rAccel =
+      targetRight !== 0
+        ? InputManager.ACCEL
+        : InputManager.DECEL;
+
+    this.moveForward +=
+      (targetForward - this.moveForward) *
+      Math.min(1, fAccel * dt);
+    this.moveRight +=
+      (targetRight - this.moveRight) *
+      Math.min(1, rAccel * dt);
+
+    if (Math.abs(this.moveForward) < InputManager.DEADZONE)
+      this.moveForward = 0;
+    if (Math.abs(this.moveRight) < InputManager.DEADZONE)
+      this.moveRight = 0;
+  }
+
+  getMovement(): { forward: number; right: number } {
+    return { forward: this.moveForward, right: this.moveRight };
   }
 
   getRotationY(): number {
