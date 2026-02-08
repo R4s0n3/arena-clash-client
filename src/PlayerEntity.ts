@@ -189,7 +189,8 @@ export class PlayerEntity {
     guard.position.y = -0.05;
     this.sword.add(guard);
 
-    this.sword.position.y = -0.55;
+    this.sword.position.set(0, -0.35, 0.08);
+    this.sword.rotation.x = -0.2;
     this.rightArm.add(this.sword);
     this.torso.add(this.rightArm);
 
@@ -379,7 +380,7 @@ export class PlayerEntity {
     if (state.action === "attacking") {
       const comboStep = Math.max(1, Math.min(3, state.attackIndex || 1));
       const stepSign = comboStep % 2 === 1 ? 1 : -1;
-      const stepPower = comboStep === 3 ? 1.2 : 1.0;
+      const stepPower = comboStep === 3 ? 1.25 : 1.0;
       const elapsed = Date.now() - state.attackTime;
       this.attackAnimProgress = Math.min(elapsed / 600, 1);
 
@@ -390,19 +391,35 @@ export class PlayerEntity {
       const recover = Math.min(Math.max((p - 0.54) / 0.46, 0), 1);
       const swingAngle = -1.25 * wind + 3.0 * strike - 0.9 * recover;
 
-      // Side slash: primary rotation around Y/Z, minimal X lift
-      this.rightArm.rotation.x = -0.2 + Math.sin(p * Math.PI) * 0.25;
-      this.rightArm.rotation.y =
-        -0.7 * stepSign + swingAngle * 0.55 * stepSign;
-      this.rightArm.rotation.z =
-        0.12 * stepSign + Math.sin(p * Math.PI) * -0.6 * stepSign;
-      this.sword.rotation.z =
-        Math.sin(p * Math.PI) * 0.9 * stepSign * stepPower;
-      this.sword.rotation.x = -0.15 * stepPower;
+      if (comboStep === 3) {
+        // Overhead slash
+        this.rightArm.rotation.x =
+          -1.4 + Math.sin(p * Math.PI) * 1.6 * stepPower;
+        this.rightArm.rotation.y =
+          0.2 + Math.sin(p * Math.PI) * -0.3;
+        this.rightArm.rotation.z =
+          0.15 + Math.sin(p * Math.PI) * 0.2;
+        this.sword.rotation.x = -0.6 * stepPower;
+        this.sword.rotation.z = 0.2;
+      } else {
+        // Wide side slashes
+        this.rightArm.rotation.x = -0.15 + Math.sin(p * Math.PI) * 0.35;
+        this.rightArm.rotation.y =
+          -1.1 * stepSign + swingAngle * 0.75 * stepSign;
+        this.rightArm.rotation.z =
+          0.2 * stepSign + Math.sin(p * Math.PI) * -0.85 * stepSign;
+        this.sword.rotation.z =
+          Math.sin(p * Math.PI) * 1.25 * stepSign * stepPower;
+        this.sword.rotation.x = -0.2 * stepPower;
+      }
 
+      const torsoYawTarget =
+        comboStep === 3
+          ? -0.15 + strike * 0.25
+          : (-0.35 + strike * 0.7) * stepSign * stepPower;
       this.torso.rotation.y = THREE.MathUtils.lerp(
         this.torso.rotation.y,
-        (-0.25 + strike * 0.55) * stepSign * stepPower,
+        torsoYawTarget,
         Math.min(1, dt * 10)
       );
       this.torso.rotation.x = THREE.MathUtils.lerp(
