@@ -36,10 +36,11 @@ export class CameraController {
       -Math.cos(rotationY)
     );
 
+    // Camera goes BEHIND the player: opposite of forward direction
     this._targetPos.set(
-      playerPos.x - this._forward.x * CAMERA_DISTANCE,
+      playerPos.x + this._forward.x * CAMERA_DISTANCE,
       playerPos.y + CAMERA_HEIGHT,
-      playerPos.z - this._forward.z * CAMERA_DISTANCE
+      playerPos.z + this._forward.z * CAMERA_DISTANCE
     );
 
     // Smooth follow with snappy lerp

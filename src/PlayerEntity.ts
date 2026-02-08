@@ -1,98 +1,68 @@
 // client/src/PlayerEntity.ts
+// Blocky Roblox/Minecraft-style character with clean articulated limbs
 import * as THREE from "three";
 import type { PlayerState } from "./types";
 
-// --- Constants ---
-const LERP_SPEED = 15;
-const BODY_HEIGHT = 1.0;
-const LAND_BOUNCE_TIME = 0.14;
+const LERP_SPEED = 18;
 
-// Easing helpers
-function easeOutQuad(t: number): number { return 1 - (1 - t) * (1 - t); }
-function easeInOutCubic(t: number): number { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
-function easeOutBack(t: number): number { const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
-
-// Smooth approach that feels snappy
 function approach(current: number, target: number, speed: number, dt: number): number {
   return current + (target - current) * Math.min(1, speed * dt);
 }
 
 export class PlayerEntity {
-  // --- Scene hierarchy ---
-  private group: THREE.Group;           // root: positioned in world
-  private hipPivot: THREE.Group;        // hip rotation point
-  private torso: THREE.Group;           // upper body
-  private headGroup: THREE.Group;
+  // Hierarchy: group > root (rotation) > body parts
+  private group: THREE.Group;   // world position
+  private root: THREE.Group;    // body rotation pivot at feet
 
-  // Arms (shoulder pivot > upper arm > elbow pivot > forearm > hand)
-  private rShoulder: THREE.Group;
-  private rUpperArm: THREE.Group;
-  private rElbow: THREE.Group;
-  private rForearm: THREE.Group;
-  private rHand: THREE.Group;
+  // Body parts - all boxes
+  private torso: THREE.Mesh;
+  private head: THREE.Mesh;
+  private rArm: THREE.Group;    // right arm pivot (sword)
+  private rArmMesh: THREE.Mesh;
+  private lArm: THREE.Group;    // left arm pivot (shield)
+  private lArmMesh: THREE.Mesh;
+  private rLeg: THREE.Group;    // right leg pivot
+  private rLegMesh: THREE.Mesh;
+  private lLeg: THREE.Group;    // left leg pivot
+  private lLegMesh: THREE.Mesh;
+
+  // Weapons
   private swordGroup: THREE.Group;
-
-  private lShoulder: THREE.Group;
-  private lUpperArm: THREE.Group;
-  private lElbow: THREE.Group;
-  private lForearm: THREE.Group;
-  private lHand: THREE.Group;
   private shieldGroup: THREE.Group;
-
-  // Legs (hip pivot > upper leg > knee pivot > lower leg > foot)
-  private lHip: THREE.Group;
-  private lUpperLeg: THREE.Group;
-  private lKnee: THREE.Group;
-  private lLowerLeg: THREE.Group;
-
-  private rHip: THREE.Group;
-  private rUpperLeg: THREE.Group;
-  private rKnee: THREE.Group;
-  private rLowerLeg: THREE.Group;
 
   private nameSprite: THREE.Sprite;
 
-  // --- State ---
+  // State
   private isLocal: boolean;
   private targetPos = new THREE.Vector3();
   private targetRot = 0;
-  private bodyMaterial: THREE.MeshStandardMaterial;
+  private bodyMat: THREE.MeshLambertMaterial;
   private originalColor: THREE.Color;
-  private allMaterials: THREE.MeshStandardMaterial[] = [];
 
-  // Animation state
+  // Animation
   private idleTime = 0;
   private walkCycle = 0;
   private moveSpeed = 0;
-  private localMoveSpeed = 0; // for local player, derived from input
+  private localMoveSpeed = 0;
   private prevX = 0;
   private prevZ = 0;
 
-  // Attack animation (local elapsed timer, avoids clock skew)
   private attackElapsed = 0;
   private attackActive = false;
   private attackStep = 0;
 
-  // Hit reaction
   private hitFlashTime = 0;
   private hitRecoilTime = 0;
   private blockImpactTime = 0;
-  private emissiveFlashTime = 0;
   private scalePulseTime = 0;
-
-  // Dodge
   private dodgeTime = 0;
   private dodgeActive = false;
-
-  // Landing
   private landTimer = 0;
   private prevY = 0;
 
-  // Knockback visual offset (client-side, decays quickly)
   private kbOffsetX = 0;
   private kbOffsetZ = 0;
 
-  // Sword tip position for trail effects
   private swordTip = new THREE.Vector3();
 
   constructor(state: PlayerState, isLocal: boolean, scene: THREE.Scene) {
@@ -104,350 +74,173 @@ export class PlayerEntity {
     const color = new THREE.Color(state.color);
     this.originalColor = color.clone();
 
-    // Shared materials
-    const armorMat = new THREE.MeshStandardMaterial({ color: 0x50585f, roughness: 0.3, metalness: 0.75 });
-    const armorDark = new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.35, metalness: 0.7 });
-    const leatherMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.85, metalness: 0.05 });
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf0c8a0, roughness: 0.75 });
-    const clothMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.05 });
-    this.bodyMaterial = clothMat;
-    const metalGold = new THREE.MeshStandardMaterial({ color: 0xc9a84c, roughness: 0.3, metalness: 0.85 });
-    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xdce4ee, roughness: 0.1, metalness: 1.0 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x222428, roughness: 0.5, metalness: 0.4 });
+    // Materials - use Lambert for performance (no specular calculation)
+    this.bodyMat = new THREE.MeshLambertMaterial({ color });
+    const skinMat = new THREE.MeshLambertMaterial({ color: 0xf0c8a0 });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const metalMat = new THREE.MeshLambertMaterial({ color: 0x888899 });
+    const goldMat = new THREE.MeshLambertMaterial({ color: 0xccaa55 });
+    const woodMat = new THREE.MeshLambertMaterial({ color: 0x664422 });
+    const bladeMat = new THREE.MeshLambertMaterial({ color: 0xccddee });
+    const shieldWoodMat = new THREE.MeshLambertMaterial({ color: 0x553311 });
 
-    this.allMaterials = [armorMat, armorDark, leatherMat, skinMat, clothMat, metalGold, bladeMat, darkMat];
-
-    // === BUILD HIERARCHY ===
+    // === HIERARCHY ===
     this.group = new THREE.Group();
-    this.hipPivot = new THREE.Group();
-    this.hipPivot.position.y = 0.95; // hip height
-    this.group.add(this.hipPivot);
+    this.root = new THREE.Group();
+    this.group.add(this.root);
 
-    this.torso = new THREE.Group();
-    this.hipPivot.add(this.torso);
+    // === TORSO (center body block) ===
+    // 0.8 wide, 1.0 tall, 0.4 deep. Bottom at y=0.9, top at y=1.9
+    const torsoGeo = new THREE.BoxGeometry(0.8, 1.0, 0.4);
+    this.torso = new THREE.Mesh(torsoGeo, this.bodyMat);
+    this.torso.position.y = 1.4; // center of torso
+    this.torso.castShadow = true;
+    this.root.add(this.torso);
 
-    // --- TORSO ---
-    // Core body
-    const torsoGeo = new THREE.CapsuleGeometry(0.28, 0.6, 6, 10);
-    const torsoMesh = new THREE.Mesh(torsoGeo, clothMat);
-    torsoMesh.position.y = 0.35;
-    torsoMesh.castShadow = true;
-    this.torso.add(torsoMesh);
+    // === HEAD ===
+    // 0.6 cube, sits on top of torso
+    const headGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+    this.head = new THREE.Mesh(headGeo, skinMat);
+    this.head.position.y = 2.2;
+    this.head.castShadow = true;
+    this.root.add(this.head);
 
-    // Chest armor plate
-    const chestGeo = new THREE.BoxGeometry(0.58, 0.55, 0.34);
-    const chest = new THREE.Mesh(chestGeo, armorMat);
-    chest.position.set(0, 0.4, -0.02);
-    chest.castShadow = true;
-    this.torso.add(chest);
+    // Eyes (two small dark blocks on front face of head)
+    const eyeGeo = new THREE.BoxGeometry(0.1, 0.08, 0.05);
+    const lEye = new THREE.Mesh(eyeGeo, darkMat);
+    lEye.position.set(0.12, 2.22, -0.3);
+    this.root.add(lEye);
+    const rEye = new THREE.Mesh(eyeGeo, darkMat);
+    rEye.position.set(-0.12, 2.22, -0.3);
+    this.root.add(rEye);
 
-    // Waist / belt
-    const waistGeo = new THREE.CylinderGeometry(0.3, 0.28, 0.12, 12);
-    const waist = new THREE.Mesh(waistGeo, leatherMat);
-    waist.position.y = 0.05;
-    this.torso.add(waist);
-
-    // Belt buckle
-    const buckleGeo = new THREE.BoxGeometry(0.1, 0.08, 0.06);
-    const buckle = new THREE.Mesh(buckleGeo, metalGold);
-    buckle.position.set(0, 0.05, -0.28);
-    this.torso.add(buckle);
-
-    // Tabard (cloth hanging over chest in player color)
-    const tabardGeo = new THREE.BoxGeometry(0.38, 0.7, 0.04);
-    const tabard = new THREE.Mesh(tabardGeo, clothMat);
-    tabard.position.set(0, 0.25, -0.17);
-    this.torso.add(tabard);
-
-    // --- HEAD ---
-    this.headGroup = new THREE.Group();
-    this.headGroup.position.y = 0.75;
-    this.torso.add(this.headGroup);
-
-    // Neck
-    const neckGeo = new THREE.CylinderGeometry(0.1, 0.12, 0.1, 8);
-    const neck = new THREE.Mesh(neckGeo, skinMat);
-    neck.position.y = -0.05;
-    this.headGroup.add(neck);
-
-    // Head
-    const headGeo = new THREE.SphereGeometry(0.22, 10, 8);
-    const head = new THREE.Mesh(headGeo, skinMat);
-    head.position.y = 0.15;
-    head.castShadow = true;
-    this.headGroup.add(head);
-
-    // Helmet - open face style
-    const helmGeo = new THREE.SphereGeometry(0.24, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.6);
-    const helm = new THREE.Mesh(helmGeo, armorMat);
-    helm.position.y = 0.17;
+    // Helmet (slightly larger box on top half of head)
+    const helmGeo = new THREE.BoxGeometry(0.65, 0.35, 0.65);
+    const helm = new THREE.Mesh(helmGeo, metalMat);
+    helm.position.y = 2.35;
     helm.castShadow = true;
-    this.headGroup.add(helm);
+    this.root.add(helm);
 
-    // Helmet brim / nose guard
-    const brimGeo = new THREE.BoxGeometry(0.04, 0.12, 0.12);
-    const brim = new THREE.Mesh(brimGeo, armorDark);
-    brim.position.set(0, 0.1, -0.22);
-    this.headGroup.add(brim);
+    // === RIGHT ARM (sword arm, player's right = -X) ===
+    // Pivot at shoulder height
+    this.rArm = new THREE.Group();
+    this.rArm.position.set(-0.55, 1.75, 0); // shoulder joint
+    this.root.add(this.rArm);
 
-    // Eye slit
-    const slitGeo = new THREE.BoxGeometry(0.3, 0.04, 0.04);
-    const slit = new THREE.Mesh(slitGeo, darkMat);
-    slit.position.set(0, 0.14, -0.22);
-    this.headGroup.add(slit);
+    const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
+    this.rArmMesh = new THREE.Mesh(armGeo, this.bodyMat);
+    this.rArmMesh.position.y = -0.4; // hangs down from pivot
+    this.rArmMesh.castShadow = true;
+    this.rArm.add(this.rArmMesh);
 
-    // === RIGHT ARM (SWORD) ===
-    this.rShoulder = new THREE.Group();
-    this.rShoulder.position.set(-0.38, 0.6, 0);
-    this.torso.add(this.rShoulder);
-
-    // Pauldron (shoulder guard)
-    const pauldronGeo = new THREE.SphereGeometry(0.15, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.6);
-    const rPauldron = new THREE.Mesh(pauldronGeo, armorMat);
-    rPauldron.rotation.z = 0.3;
-    rPauldron.castShadow = true;
-    this.rShoulder.add(rPauldron);
-
-    this.rUpperArm = new THREE.Group();
-    this.rShoulder.add(this.rUpperArm);
-
-    const rUpperGeo = new THREE.CapsuleGeometry(0.09, 0.28, 5, 6);
-    const rUpperMesh = new THREE.Mesh(rUpperGeo, clothMat);
-    rUpperMesh.position.y = -0.18;
-    rUpperMesh.castShadow = true;
-    this.rUpperArm.add(rUpperMesh);
-
-    this.rElbow = new THREE.Group();
-    this.rElbow.position.y = -0.32;
-    this.rUpperArm.add(this.rElbow);
-
-    // Elbow joint visual
-    const elbowJointGeo = new THREE.SphereGeometry(0.07, 6, 6);
-    const rElbowJoint = new THREE.Mesh(elbowJointGeo, armorDark);
-    this.rElbow.add(rElbowJoint);
-
-    this.rForearm = new THREE.Group();
-    this.rElbow.add(this.rForearm);
-
-    const rForeGeo = new THREE.CapsuleGeometry(0.08, 0.24, 5, 6);
-    const rForeMesh = new THREE.Mesh(rForeGeo, leatherMat);
-    rForeMesh.position.y = -0.16;
-    rForeMesh.castShadow = true;
-    this.rForearm.add(rForeMesh);
-
-    // Gauntlet
-    const gauntletGeo = new THREE.CylinderGeometry(0.09, 0.1, 0.1, 8);
-    const rGauntlet = new THREE.Mesh(gauntletGeo, armorDark);
-    rGauntlet.position.y = -0.22;
-    this.rForearm.add(rGauntlet);
-
-    this.rHand = new THREE.Group();
-    this.rHand.position.y = -0.28;
-    this.rForearm.add(this.rHand);
-
-    // --- SWORD ---
+    // Sword attached to bottom of right arm
     this.swordGroup = new THREE.Group();
-    this.rHand.add(this.swordGroup);
+    this.swordGroup.position.y = -0.85; // at hand position
+    this.rArm.add(this.swordGroup);
 
     // Grip
-    const gripGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.22, 8);
-    const grip = new THREE.Mesh(gripGeo, leatherMat);
-    grip.position.y = 0.0;
+    const gripGeo = new THREE.BoxGeometry(0.06, 0.2, 0.06);
+    const grip = new THREE.Mesh(gripGeo, woodMat);
     this.swordGroup.add(grip);
 
-    // Pommel
-    const pommelGeo = new THREE.SphereGeometry(0.04, 6, 6);
-    const pommel = new THREE.Mesh(pommelGeo, metalGold);
-    pommel.position.y = 0.12;
-    this.swordGroup.add(pommel);
-
     // Crossguard
-    const crossGeo = new THREE.BoxGeometry(0.22, 0.035, 0.05);
-    const cross = new THREE.Mesh(crossGeo, metalGold);
+    const crossGeo = new THREE.BoxGeometry(0.22, 0.04, 0.06);
+    const cross = new THREE.Mesh(crossGeo, goldMat);
     cross.position.y = -0.1;
     this.swordGroup.add(cross);
 
-    // Blade (tapered using vertices manipulation for cheap look)
-    const bladeGeo = new THREE.BoxGeometry(0.05, 0.9, 0.02);
-    // Taper the blade tip
-    const bladePos = bladeGeo.attributes.position;
-    for (let i = 0; i < bladePos.count; i++) {
-      const y = bladePos.getY(i);
-      if (y < -0.35) {
-        const taper = 1 - ((-y - 0.35) / 0.1);
-        const clampedTaper = Math.max(0.05, taper);
-        bladePos.setX(i, bladePos.getX(i) * clampedTaper);
-      }
-    }
-    bladeGeo.computeVertexNormals();
+    // Blade
+    const bladeGeo = new THREE.BoxGeometry(0.06, 0.8, 0.02);
     const blade = new THREE.Mesh(bladeGeo, bladeMat);
-    blade.position.y = -0.55;
+    blade.position.y = -0.5;
     blade.castShadow = true;
     this.swordGroup.add(blade);
 
-    // Blood groove (fuller) - thin dark line on blade
-    const fullerGeo = new THREE.BoxGeometry(0.015, 0.6, 0.025);
-    const fuller = new THREE.Mesh(fullerGeo, armorDark);
-    fuller.position.y = -0.42;
-    this.swordGroup.add(fuller);
+    // Pommel
+    const pomGeo = new THREE.BoxGeometry(0.08, 0.06, 0.08);
+    const pom = new THREE.Mesh(pomGeo, goldMat);
+    pom.position.y = 0.12;
+    this.swordGroup.add(pom);
 
-    // Default sword rest position
-    this.swordGroup.position.set(0, -0.05, -0.04);
-    this.swordGroup.rotation.x = -0.15;
+    // === LEFT ARM (shield arm, player's left = +X) ===
+    this.lArm = new THREE.Group();
+    this.lArm.position.set(0.55, 1.75, 0); // shoulder joint
+    this.root.add(this.lArm);
 
-    // === LEFT ARM (SHIELD) ===
-    this.lShoulder = new THREE.Group();
-    this.lShoulder.position.set(0.38, 0.6, 0);
-    this.torso.add(this.lShoulder);
+    this.lArmMesh = new THREE.Mesh(armGeo.clone(), this.bodyMat);
+    this.lArmMesh.position.y = -0.4;
+    this.lArmMesh.castShadow = true;
+    this.lArm.add(this.lArmMesh);
 
-    const lPauldron = new THREE.Mesh(pauldronGeo.clone(), armorMat);
-    lPauldron.rotation.z = -0.3;
-    lPauldron.castShadow = true;
-    this.lShoulder.add(lPauldron);
-
-    this.lUpperArm = new THREE.Group();
-    this.lShoulder.add(this.lUpperArm);
-
-    const lUpperMesh = new THREE.Mesh(rUpperGeo.clone(), clothMat);
-    lUpperMesh.position.y = -0.18;
-    lUpperMesh.castShadow = true;
-    this.lUpperArm.add(lUpperMesh);
-
-    this.lElbow = new THREE.Group();
-    this.lElbow.position.y = -0.32;
-    this.lUpperArm.add(this.lElbow);
-
-    const lElbowJoint = new THREE.Mesh(elbowJointGeo.clone(), armorDark);
-    this.lElbow.add(lElbowJoint);
-
-    this.lForearm = new THREE.Group();
-    this.lElbow.add(this.lForearm);
-
-    const lForeMesh = new THREE.Mesh(rForeGeo.clone(), leatherMat);
-    lForeMesh.position.y = -0.16;
-    lForeMesh.castShadow = true;
-    this.lForearm.add(lForeMesh);
-
-    const lGauntlet = new THREE.Mesh(gauntletGeo.clone(), armorDark);
-    lGauntlet.position.y = -0.22;
-    this.lForearm.add(lGauntlet);
-
-    this.lHand = new THREE.Group();
-    this.lHand.position.y = -0.28;
-    this.lForearm.add(this.lHand);
-
-    // --- SHIELD (round shield with boss) ---
+    // Shield attached to left arm - face points outward (-Z = forward)
     this.shieldGroup = new THREE.Group();
-    this.lHand.add(this.shieldGroup);
+    this.shieldGroup.position.set(0.05, -0.45, -0.2); // in front of forearm
+    this.lArm.add(this.shieldGroup);
 
-    const shieldFaceGeo = new THREE.CylinderGeometry(0.35, 0.38, 0.05, 16);
-    const shieldFaceMat = new THREE.MeshStandardMaterial({ color: 0x5a3822, roughness: 0.55, metalness: 0.15 });
-    const shieldFace = new THREE.Mesh(shieldFaceGeo, shieldFaceMat);
-    shieldFace.castShadow = true;
-    this.shieldGroup.add(shieldFace);
+    // Shield body - flat box, wide and tall, thin depth
+    // Face normal is -Z (forward-facing when arm is down)
+    const shieldGeo = new THREE.BoxGeometry(0.5, 0.6, 0.06);
+    const shieldMesh = new THREE.Mesh(shieldGeo, shieldWoodMat);
+    shieldMesh.castShadow = true;
+    this.shieldGroup.add(shieldMesh);
 
-    // Shield rim
-    const sRimGeo = new THREE.TorusGeometry(0.36, 0.03, 6, 16);
-    const sRim = new THREE.Mesh(sRimGeo, metalGold);
-    sRim.rotation.x = Math.PI / 2;
-    sRim.position.y = 0.025;
-    this.shieldGroup.add(sRim);
+    // Shield rim (frame around the shield)
+    const rimTopGeo = new THREE.BoxGeometry(0.55, 0.04, 0.08);
+    const rimTop = new THREE.Mesh(rimTopGeo, goldMat);
+    rimTop.position.y = 0.3;
+    this.shieldGroup.add(rimTop);
+    const rimBot = new THREE.Mesh(rimTopGeo.clone(), goldMat);
+    rimBot.position.y = -0.3;
+    this.shieldGroup.add(rimBot);
+    const rimSideGeo = new THREE.BoxGeometry(0.04, 0.6, 0.08);
+    const rimL = new THREE.Mesh(rimSideGeo, goldMat);
+    rimL.position.x = 0.25;
+    this.shieldGroup.add(rimL);
+    const rimR = new THREE.Mesh(rimSideGeo.clone(), goldMat);
+    rimR.position.x = -0.25;
+    this.shieldGroup.add(rimR);
 
-    // Shield boss (center metal dome)
-    const bossGeo = new THREE.SphereGeometry(0.07, 8, 6);
-    const boss = new THREE.Mesh(bossGeo, armorMat);
-    boss.position.set(0, 0.04, 0);
+    // Shield boss (center dot)
+    const bossGeo = new THREE.BoxGeometry(0.12, 0.12, 0.08);
+    const boss = new THREE.Mesh(bossGeo, metalMat);
+    boss.position.z = -0.04;
     this.shieldGroup.add(boss);
 
-    // Color accent ring on shield
-    const accentGeo = new THREE.TorusGeometry(0.2, 0.02, 6, 16);
-    const accent = new THREE.Mesh(accentGeo, clothMat);
-    accent.rotation.x = Math.PI / 2;
-    accent.position.y = 0.03;
-    this.shieldGroup.add(accent);
-
-    this.shieldGroup.rotation.x = Math.PI / 2;
-    this.shieldGroup.position.set(0, -0.1, -0.1);
+    // Color emblem on shield
+    const emblemGeo = new THREE.BoxGeometry(0.2, 0.25, 0.02);
+    const emblem = new THREE.Mesh(emblemGeo, this.bodyMat);
+    emblem.position.z = -0.04;
+    emblem.position.y = 0.05;
+    this.shieldGroup.add(emblem);
 
     // === LEGS ===
+    // Right leg (player's right = -X)
+    this.rLeg = new THREE.Group();
+    this.rLeg.position.set(-0.2, 0.9, 0); // hip joint
+    this.root.add(this.rLeg);
+
+    const legGeo = new THREE.BoxGeometry(0.3, 0.85, 0.3);
+    this.rLegMesh = new THREE.Mesh(legGeo, darkMat);
+    this.rLegMesh.position.y = -0.425;
+    this.rLegMesh.castShadow = true;
+    this.rLeg.add(this.rLegMesh);
+
     // Left leg
-    this.lHip = new THREE.Group();
-    this.lHip.position.set(0.14, -0.02, 0);
-    this.hipPivot.add(this.lHip);
+    this.lLeg = new THREE.Group();
+    this.lLeg.position.set(0.2, 0.9, 0);
+    this.root.add(this.lLeg);
 
-    this.lUpperLeg = new THREE.Group();
-    this.lHip.add(this.lUpperLeg);
+    this.lLegMesh = new THREE.Mesh(legGeo.clone(), darkMat);
+    this.lLegMesh.position.y = -0.425;
+    this.lLegMesh.castShadow = true;
+    this.lLeg.add(this.lLegMesh);
 
-    const upperLegGeo = new THREE.CapsuleGeometry(0.1, 0.3, 5, 6);
-    const lULMesh = new THREE.Mesh(upperLegGeo, leatherMat);
-    lULMesh.position.y = -0.2;
-    lULMesh.castShadow = true;
-    this.lUpperLeg.add(lULMesh);
-
-    this.lKnee = new THREE.Group();
-    this.lKnee.position.y = -0.38;
-    this.lUpperLeg.add(this.lKnee);
-
-    // Knee guard
-    const kneeGeo = new THREE.SphereGeometry(0.065, 6, 6);
-    const lKneeGuard = new THREE.Mesh(kneeGeo, armorDark);
-    this.lKnee.add(lKneeGuard);
-
-    this.lLowerLeg = new THREE.Group();
-    this.lKnee.add(this.lLowerLeg);
-
-    const lowerLegGeo = new THREE.CapsuleGeometry(0.085, 0.28, 5, 6);
-    const lLLMesh = new THREE.Mesh(lowerLegGeo, leatherMat);
-    lLLMesh.position.y = -0.2;
-    lLLMesh.castShadow = true;
-    this.lLowerLeg.add(lLLMesh);
-
-    // Boot
-    const bootGeo = new THREE.BoxGeometry(0.12, 0.1, 0.18);
-    const lBoot = new THREE.Mesh(bootGeo, armorDark);
-    lBoot.position.set(0, -0.38, -0.02);
-    lBoot.castShadow = true;
-    this.lLowerLeg.add(lBoot);
-
-    // Right leg (mirror)
-    this.rHip = new THREE.Group();
-    this.rHip.position.set(-0.14, -0.02, 0);
-    this.hipPivot.add(this.rHip);
-
-    this.rUpperLeg = new THREE.Group();
-    this.rHip.add(this.rUpperLeg);
-
-    const rULMesh = new THREE.Mesh(upperLegGeo.clone(), leatherMat);
-    rULMesh.position.y = -0.2;
-    rULMesh.castShadow = true;
-    this.rUpperLeg.add(rULMesh);
-
-    this.rKnee = new THREE.Group();
-    this.rKnee.position.y = -0.38;
-    this.rUpperLeg.add(this.rKnee);
-
-    const rKneeGuard = new THREE.Mesh(kneeGeo.clone(), armorDark);
-    this.rKnee.add(rKneeGuard);
-
-    this.rLowerLeg = new THREE.Group();
-    this.rKnee.add(this.rLowerLeg);
-
-    const rLLMesh = new THREE.Mesh(lowerLegGeo.clone(), leatherMat);
-    rLLMesh.position.y = -0.2;
-    rLLMesh.castShadow = true;
-    this.rLowerLeg.add(rLLMesh);
-
-    const rBoot = new THREE.Mesh(bootGeo.clone(), armorDark);
-    rBoot.position.set(0, -0.38, -0.02);
-    rBoot.castShadow = true;
-    this.rLowerLeg.add(rBoot);
-
-    // --- NAME TAG ---
+    // === NAME TAG ===
     this.nameSprite = this.createNameSprite(state.name, isLocal);
-    this.nameSprite.position.y = 2.4;
+    this.nameSprite.position.y = 2.8;
     this.group.add(this.nameSprite);
 
-    // --- INIT ---
+    // === INIT ===
     this.targetPos.set(state.x, state.y, state.z);
     this.targetRot = state.rotation;
     this.group.position.set(state.x, state.y, state.z);
@@ -456,7 +249,6 @@ export class PlayerEntity {
     scene.add(this.group);
   }
 
-  // ===================== NAME TAG =====================
   private createNameSprite(name: string, isLocal: boolean): THREE.Sprite {
     const canvas = document.createElement("canvas");
     canvas.width = 256;
@@ -470,8 +262,8 @@ export class PlayerEntity {
     ctx.strokeText(name, 128, 40);
     ctx.fillText(name, 128, 40);
     const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
-    const sprite = new THREE.Sprite(material);
+    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
     sprite.scale.set(2, 0.5, 1);
     return sprite;
   }
@@ -482,7 +274,7 @@ export class PlayerEntity {
     old.material.map?.dispose();
     old.material.dispose();
     this.nameSprite = this.createNameSprite(name, this.isLocal);
-    this.nameSprite.position.y = 2.4;
+    this.nameSprite.position.y = 2.8;
     this.group.add(this.nameSprite);
   }
 
@@ -491,44 +283,42 @@ export class PlayerEntity {
     this.targetPos.set(state.x, state.y, state.z);
     this.targetRot = state.rotation;
 
-    // Move speed for animation
-    const dx = state.x - this.prevX;
-    const dz = state.z - this.prevZ;
-    const moveDist = Math.sqrt(dx * dx + dz * dz);
-    const targetSpeed = moveDist / Math.max(dt, 0.001);
-    this.moveSpeed = approach(this.moveSpeed, targetSpeed, 10, dt);
+    // Move speed for remote players
+    if (!this.isLocal) {
+      const dx = state.x - this.prevX;
+      const dz = state.z - this.prevZ;
+      this.moveSpeed = approach(this.moveSpeed, Math.sqrt(dx * dx + dz * dz) / Math.max(dt, 0.001), 12, dt);
+    }
     this.prevX = state.x;
     this.prevZ = state.z;
 
-    // Position interpolation
-    if (!this.isLocal) {
-      this.group.position.lerp(this.targetPos, Math.min(1, LERP_SPEED * dt));
-    } else {
-      // Local player: use predicted position + knockback offset
+    // Position
+    if (this.isLocal) {
       this.group.position.set(
         this.targetPos.x + this.kbOffsetX,
         this.targetPos.y,
         this.targetPos.z + this.kbOffsetZ
       );
+      // Local player: instant rotation
+      this.group.rotation.y = this.targetRot;
+    } else {
+      this.group.position.lerp(this.targetPos, Math.min(1, LERP_SPEED * dt));
+      // Smooth rotation for remote players
+      let rd = this.targetRot - this.group.rotation.y;
+      while (rd > Math.PI) rd -= Math.PI * 2;
+      while (rd < -Math.PI) rd += Math.PI * 2;
+      this.group.rotation.y += rd * Math.min(1, LERP_SPEED * dt);
     }
 
-    // Decay knockback offset
-    this.kbOffsetX = approach(this.kbOffsetX, 0, 8, dt);
-    this.kbOffsetZ = approach(this.kbOffsetZ, 0, 8, dt);
+    // Knockback decay
+    this.kbOffsetX = approach(this.kbOffsetX, 0, 10, dt);
+    this.kbOffsetZ = approach(this.kbOffsetZ, 0, 10, dt);
 
     // Landing
-    if (this.prevY > 0.05 && this.group.position.y <= 0.02) {
-      this.landTimer = LAND_BOUNCE_TIME;
-    }
+    if (this.prevY > 0.05 && this.group.position.y <= 0.02) this.landTimer = 0.12;
     this.prevY = this.group.position.y;
 
-    // Rotation
-    let rotDiff = this.targetRot - this.group.rotation.y;
-    while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
-    while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-    this.group.rotation.y += rotDiff * Math.min(1, LERP_SPEED * dt);
-
-    // Track attack state with local elapsed timer
+    // Attack tracking
     if (state.action === "attacking") {
       if (!this.attackActive || state.attackIndex !== this.attackStep) {
         this.attackActive = true;
@@ -542,7 +332,7 @@ export class PlayerEntity {
       this.attackStep = 0;
     }
 
-    // Dodge state
+    // Dodge tracking
     if (state.action === "dodging" && !this.dodgeActive) {
       this.dodgeActive = true;
       this.dodgeTime = 0;
@@ -557,29 +347,28 @@ export class PlayerEntity {
     // Visibility
     this.group.visible = !state.isDead;
 
-    // Scale pulse on hit
+    // Scale pulse
     if (this.scalePulseTime > 0) {
       this.scalePulseTime -= dt;
-      const s = 1 + Math.sin((this.scalePulseTime / 0.15) * Math.PI) * 0.06;
-      this.torso.scale.setScalar(s);
+      const s = 1 + Math.sin((this.scalePulseTime / 0.12) * Math.PI) * 0.08;
+      this.root.scale.setScalar(s);
     } else {
-      this.torso.scale.setScalar(1);
+      this.root.scale.setScalar(1);
     }
 
-    // Hit flash (emissive)
+    // Hit flash
     if (this.hitFlashTime > 0) {
       this.hitFlashTime -= dt;
-      const intensity = Math.sin(this.hitFlashTime * 35) > 0 ? 0.8 : 0;
-      this.bodyMaterial.emissive.setRGB(intensity, intensity * 0.3, intensity * 0.1);
+      const flash = Math.sin(this.hitFlashTime * 40) > 0;
+      this.bodyMat.emissive.setRGB(flash ? 1 : 0, flash ? 0.3 : 0, flash ? 0.1 : 0);
       if (this.hitFlashTime <= 0) {
-        this.bodyMaterial.emissive.setRGB(0, 0, 0);
-        this.bodyMaterial.color.copy(this.originalColor);
+        this.bodyMat.emissive.setRGB(0, 0, 0);
       }
     }
 
-    // Update sword tip world position for trail
+    // Sword tip for trail
     this.swordGroup.updateWorldMatrix(true, false);
-    this.swordTip.set(0, -1.0, 0);
+    this.swordTip.set(0, -0.9, 0);
     this.swordGroup.localToWorld(this.swordTip);
   }
 
@@ -600,294 +389,186 @@ export class PlayerEntity {
     const walkFactor = Math.min(speed / 8, 1);
 
     // Landing squash
-    if (this.landTimer > 0) this.landTimer -= dt;
     if (this.landTimer > 0) {
-      const p = 1 - this.landTimer / LAND_BOUNCE_TIME;
-      const sq = Math.sin(p * Math.PI);
-      this.hipPivot.scale.y = 1 - sq * 0.1;
-      this.hipPivot.scale.x = 1 + sq * 0.05;
-      this.hipPivot.scale.z = 1 + sq * 0.05;
-    } else {
-      this.hipPivot.scale.x = approach(this.hipPivot.scale.x, 1, 12, dt);
-      this.hipPivot.scale.y = approach(this.hipPivot.scale.y, 1, 12, dt);
-      this.hipPivot.scale.z = approach(this.hipPivot.scale.z, 1, 12, dt);
+      this.landTimer -= dt;
+      const sq = Math.sin((1 - this.landTimer / 0.12) * Math.PI);
+      this.root.scale.y = 1 - sq * 0.1;
     }
 
-    // Hit recoil
-    let recoilLean = 0;
+    // Recoil
+    let recoil = 0;
     if (this.hitRecoilTime > 0) {
       this.hitRecoilTime -= dt;
-      recoilLean = Math.sin((this.hitRecoilTime / 0.25) * Math.PI) * 0.15;
+      recoil = Math.sin((this.hitRecoilTime / 0.2) * Math.PI) * 0.15;
     }
 
-    // ===== IDLE / COMBAT READY STANCE =====
+    // ===== IDLE =====
     if (state.action === "idle" && !isMoving && !inAir) {
-      const breathe = Math.sin(this.idleTime * 2.5);
-      const weightShift = Math.sin(this.idleTime * 1.2) * 0.015;
+      const breathe = Math.sin(this.idleTime * 2.5) * 0.01;
+      this.torso.position.y = 1.4 + breathe;
 
-      // Torso: subtle breathing + slight lean
-      this.torso.rotation.x = approach(this.torso.rotation.x, -0.04 + breathe * 0.012 + recoilLean, 6, dt);
-      this.torso.rotation.y = approach(this.torso.rotation.y, weightShift, 4, dt);
-      this.torso.position.y = breathe * 0.01;
+      // Arms relaxed but ready
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.3 + recoil, 8, dt);
+      this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.08, 8, dt);
+      this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.25, 8, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.08, 8, dt);
 
-      // Head: slight look-around
-      this.headGroup.rotation.x = approach(this.headGroup.rotation.x, -0.05, 4, dt);
-      this.headGroup.rotation.y = approach(this.headGroup.rotation.y, Math.sin(this.idleTime * 0.7) * 0.06, 3, dt);
+      // Legs straight
+      this.rLeg.rotation.x = approach(this.rLeg.rotation.x, 0, 8, dt);
+      this.lLeg.rotation.x = approach(this.lLeg.rotation.x, 0, 8, dt);
 
-      // Sword arm: guard position (sword held at side, slightly forward)
-      this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, -0.45, 6, dt);
-      this.rShoulder.rotation.y = approach(this.rShoulder.rotation.y, -0.15, 6, dt);
-      this.rShoulder.rotation.z = approach(this.rShoulder.rotation.z, 0.15, 6, dt);
-      this.rElbow.rotation.x = approach(this.rElbow.rotation.x, -0.7, 6, dt);
-      this.rHand.rotation.x = approach(this.rHand.rotation.x, 0.1, 6, dt);
+      // Torso/head neutral
+      this.torso.rotation.x = approach(this.torso.rotation.x, recoil, 6, dt);
+      this.torso.rotation.y = approach(this.torso.rotation.y, 0, 6, dt);
+      this.head.rotation.x = approach(this.head.rotation.x, 0, 6, dt);
+      this.head.rotation.y = approach(this.head.rotation.y, 0, 4, dt);
 
-      // Shield arm: guard position (shield across body)
-      this.lShoulder.rotation.x = approach(this.lShoulder.rotation.x, -0.5, 6, dt);
-      this.lShoulder.rotation.y = approach(this.lShoulder.rotation.y, 0.3, 6, dt);
-      this.lShoulder.rotation.z = approach(this.lShoulder.rotation.z, -0.2, 6, dt);
-      this.lElbow.rotation.x = approach(this.lElbow.rotation.x, -0.9, 6, dt);
-
-      // Legs: combat stance (slightly apart)
-      this.lHip.rotation.x = approach(this.lHip.rotation.x, -0.08, 5, dt);
-      this.lKnee.rotation.x = approach(this.lKnee.rotation.x, 0.12, 5, dt);
-      this.rHip.rotation.x = approach(this.rHip.rotation.x, 0.08, 5, dt);
-      this.rKnee.rotation.x = approach(this.rKnee.rotation.x, 0.08, 5, dt);
-
-      // Weight shift on hips
-      this.hipPivot.rotation.z = approach(this.hipPivot.rotation.z, weightShift * 2, 3, dt);
+      // Sword hangs naturally
+      this.swordGroup.rotation.x = approach(this.swordGroup.rotation.x, 0, 6, dt);
+      this.swordGroup.rotation.z = approach(this.swordGroup.rotation.z, 0, 6, dt);
     }
 
-    // ===== WALKING / RUNNING =====
+    // ===== WALKING =====
     if (isMoving && !inAir && state.action !== "attacking" && state.action !== "dodging") {
-      this.walkCycle += dt * (7 + walkFactor * 5);
+      this.walkCycle += dt * (8 + walkFactor * 6);
       const sin = Math.sin(this.walkCycle);
-      const cos = Math.cos(this.walkCycle);
 
-      // Hip sway
-      this.hipPivot.rotation.z = approach(this.hipPivot.rotation.z, sin * 0.04 * walkFactor, 8, dt);
-      this.hipPivot.rotation.y = approach(this.hipPivot.rotation.y, sin * 0.06 * walkFactor, 6, dt);
+      // Legs swing
+      this.rLeg.rotation.x = approach(this.rLeg.rotation.x, sin * 0.6 * walkFactor, 15, dt);
+      this.lLeg.rotation.x = approach(this.lLeg.rotation.x, -sin * 0.6 * walkFactor, 15, dt);
 
-      // Torso counter-rotation + forward lean
-      const forwardLean = -0.08 * walkFactor;
-      this.torso.rotation.x = approach(this.torso.rotation.x, forwardLean + recoilLean, 8, dt);
-      this.torso.rotation.y = approach(this.torso.rotation.y, -sin * 0.07 * walkFactor, 8, dt);
-      this.torso.position.y = Math.abs(sin) * 0.025 * walkFactor;
+      // Arms counter-swing
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.2 - sin * 0.35 * walkFactor + recoil, 12, dt);
+      this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.2 + sin * 0.3 * walkFactor, 12, dt);
+      this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.05, 8, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.05, 8, dt);
 
-      // Head stabilization (counters hip sway)
-      this.headGroup.rotation.y = approach(this.headGroup.rotation.y, sin * 0.04 * walkFactor, 6, dt);
+      // Torso lean forward + slight bounce
+      this.torso.rotation.x = approach(this.torso.rotation.x, -0.05 * walkFactor + recoil, 10, dt);
+      this.torso.rotation.y = approach(this.torso.rotation.y, sin * 0.04 * walkFactor, 8, dt);
+      this.torso.position.y = 1.4 + Math.abs(sin) * 0.02 * walkFactor;
 
-      // Left leg: forward swing on sin, back on -sin
-      const lLegSwing = sin * 0.55 * walkFactor;
-      this.lHip.rotation.x = approach(this.lHip.rotation.x, lLegSwing, 12, dt);
-      this.lKnee.rotation.x = approach(this.lKnee.rotation.x, Math.max(0, -cos * 0.6 * walkFactor + 0.15), 12, dt);
-
-      // Right leg: opposite phase
-      const rLegSwing = -sin * 0.55 * walkFactor;
-      this.rHip.rotation.x = approach(this.rHip.rotation.x, rLegSwing, 12, dt);
-      this.rKnee.rotation.x = approach(this.rKnee.rotation.x, Math.max(0, cos * 0.6 * walkFactor + 0.15), 12, dt);
-
-      // Arms counter-swing (opposite to legs)
-      this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, -0.35 + rLegSwing * 0.4, 10, dt);
-      this.rShoulder.rotation.y = approach(this.rShoulder.rotation.y, -0.1, 8, dt);
-      this.rElbow.rotation.x = approach(this.rElbow.rotation.x, -0.5 - Math.abs(sin) * 0.2 * walkFactor, 10, dt);
-
-      this.lShoulder.rotation.x = approach(this.lShoulder.rotation.x, -0.4 + lLegSwing * 0.3, 10, dt);
-      this.lShoulder.rotation.y = approach(this.lShoulder.rotation.y, 0.2, 8, dt);
-      this.lElbow.rotation.x = approach(this.lElbow.rotation.x, -0.7 - Math.abs(cos) * 0.15 * walkFactor, 10, dt);
+      // Sword/shield neutral during walk
+      this.swordGroup.rotation.x = approach(this.swordGroup.rotation.x, 0, 8, dt);
+      this.swordGroup.rotation.z = approach(this.swordGroup.rotation.z, 0, 8, dt);
     }
 
-    // ===== ATTACK ANIMATION =====
+    // ===== ATTACK =====
     if (state.action === "attacking") {
       const step = Math.max(1, Math.min(3, this.attackStep));
-      const durations = [0.48, 0.5, 0.62];
-      const duration = durations[step - 1];
-      const p = Math.min(this.attackElapsed / duration, 1);
+      const dur = [0.45, 0.48, 0.6][step - 1];
+      const p = Math.min(this.attackElapsed / dur, 1);
 
-      // Phase breakdowns
-      const windP = Math.min(p / 0.2, 1);       // 0-20% windup
-      const strikeP = Math.min(Math.max((p - 0.2) / 0.25, 0), 1); // 20-45% strike
-      const followP = Math.min(Math.max((p - 0.45) / 0.25, 0), 1); // 45-70% follow-through
-      const recoverP = Math.min(Math.max((p - 0.7) / 0.3, 0), 1);  // 70-100% recovery
-
-      const windEased = easeInOutCubic(windP);
-      const strikeEased = easeOutBack(strikeP);
-      const followEased = easeOutQuad(followP);
-      const recoverEased = easeInOutCubic(recoverP);
+      // Simple but punchy: windup -> strike -> follow through
+      const wind = Math.min(p / 0.2, 1);
+      const strike = Math.min(Math.max((p - 0.2) / 0.2, 0), 1);
+      const follow = Math.min(Math.max((p - 0.4) / 0.3, 0), 1);
+      const recover = Math.min(Math.max((p - 0.7) / 0.3, 0), 1);
 
       if (step === 1) {
-        // --- Right horizontal slash ---
-        // Windup: pull sword arm back-right, twist torso left
-        // Strike: snap across to left, torso follows
-        // Follow: carry momentum, arm decelerates
-        const armX = -0.4 * windEased + (-0.3) * strikeEased + 0.2 * followEased + 0.1 * recoverEased;
-        const armY = -1.3 * windEased + 2.0 * strikeEased - 0.5 * followEased - 0.2 * recoverEased;
-        const armZ = 0.3 * windEased - 0.4 * strikeEased + 0.1 * recoverEased;
-        const elbowX = -0.4 * windEased - 0.2 * strikeEased - 0.3 * recoverEased;
-        const torsoY = -0.25 * windEased + 0.45 * strikeEased - 0.1 * followEased;
-        const torsoX = 0.06 * windEased - 0.08 * strikeEased + recoilLean;
-        const swordZ = -0.3 * windEased + 1.4 * strikeEased - 0.3 * followEased;
-
-        this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, armX, 20, dt);
-        this.rShoulder.rotation.y = approach(this.rShoulder.rotation.y, armY, 20, dt);
-        this.rShoulder.rotation.z = approach(this.rShoulder.rotation.z, armZ, 20, dt);
-        this.rElbow.rotation.x = approach(this.rElbow.rotation.x, elbowX, 20, dt);
-        this.swordGroup.rotation.z = approach(this.swordGroup.rotation.z, swordZ, 18, dt);
-        this.torso.rotation.y = approach(this.torso.rotation.y, torsoY, 15, dt);
-        this.torso.rotation.x = approach(this.torso.rotation.x, torsoX, 12, dt);
-
-        // Forward step
-        this.lHip.rotation.x = approach(this.lHip.rotation.x, -0.2 * strikeEased, 10, dt);
-        this.rHip.rotation.x = approach(this.rHip.rotation.x, 0.15 * strikeEased, 10, dt);
-
+        // Right horizontal slash
+        this.rArm.rotation.x = -0.5 * wind + (-0.8) * strike + 0.2 * follow + 0.1 * recover;
+        this.rArm.rotation.z = 1.2 * wind - 1.8 * strike + 0.4 * follow;
+        this.swordGroup.rotation.z = -0.3 * wind + 1.2 * strike - 0.2 * follow;
+        this.torso.rotation.y = approach(this.torso.rotation.y, -0.3 * wind + 0.5 * strike - 0.1 * follow, 18, dt);
       } else if (step === 2) {
-        // --- Left backhand slash ---
-        const armX = -0.3 * windEased + (-0.4) * strikeEased + 0.15 * recoverEased;
-        const armY = 1.2 * windEased - 2.2 * strikeEased + 0.5 * followEased + 0.2 * recoverEased;
-        const armZ = -0.25 * windEased + 0.35 * strikeEased - 0.1 * recoverEased;
-        const elbowX = -0.3 * windEased - 0.25 * strikeEased - 0.4 * recoverEased;
-        const torsoY = 0.3 * windEased - 0.5 * strikeEased + 0.15 * followEased;
-        const torsoX = 0.05 * windEased - 0.06 * strikeEased + recoilLean;
-        const swordZ = 0.4 * windEased - 1.5 * strikeEased + 0.3 * followEased;
-
-        this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, armX, 20, dt);
-        this.rShoulder.rotation.y = approach(this.rShoulder.rotation.y, armY, 20, dt);
-        this.rShoulder.rotation.z = approach(this.rShoulder.rotation.z, armZ, 20, dt);
-        this.rElbow.rotation.x = approach(this.rElbow.rotation.x, elbowX, 20, dt);
-        this.swordGroup.rotation.z = approach(this.swordGroup.rotation.z, swordZ, 18, dt);
-        this.torso.rotation.y = approach(this.torso.rotation.y, torsoY, 15, dt);
-        this.torso.rotation.x = approach(this.torso.rotation.x, torsoX, 12, dt);
-
-        // Weight transfer
-        this.rHip.rotation.x = approach(this.rHip.rotation.x, -0.2 * strikeEased, 10, dt);
-        this.lHip.rotation.x = approach(this.lHip.rotation.x, 0.12 * strikeEased, 10, dt);
-
+        // Backhand slash (opposite direction)
+        this.rArm.rotation.x = -0.4 * wind + (-0.7) * strike + 0.2 * follow + 0.1 * recover;
+        this.rArm.rotation.z = -1.0 * wind + 1.6 * strike - 0.3 * follow;
+        this.swordGroup.rotation.z = 0.3 * wind - 1.3 * strike + 0.2 * follow;
+        this.torso.rotation.y = approach(this.torso.rotation.y, 0.3 * wind - 0.5 * strike + 0.1 * follow, 18, dt);
       } else {
-        // --- Overhead power slam ---
-        const armX = -2.2 * windEased + 1.8 * strikeEased + 0.5 * followEased + 0.1 * recoverEased;
-        const armY = 0.15 * windEased - 0.1 * strikeEased;
-        const armZ = 0.2 * windEased - 0.15 * strikeEased;
-        const elbowX = -0.8 * windEased + 0.2 * strikeEased - 0.4 * recoverEased;
-        const torsoX = -0.2 * windEased + 0.15 * strikeEased + 0.05 * followEased + recoilLean;
-        const swordX = -0.4 * windEased + 0.2 * strikeEased;
-
-        this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, armX, 22, dt);
-        this.rShoulder.rotation.y = approach(this.rShoulder.rotation.y, armY, 18, dt);
-        this.rShoulder.rotation.z = approach(this.rShoulder.rotation.z, armZ, 18, dt);
-        this.rElbow.rotation.x = approach(this.rElbow.rotation.x, elbowX, 22, dt);
-        this.swordGroup.rotation.x = approach(this.swordGroup.rotation.x, swordX - 0.15, 18, dt);
-        this.torso.rotation.x = approach(this.torso.rotation.x, torsoX, 15, dt);
+        // Overhead slam
+        this.rArm.rotation.x = -2.5 * wind + 2.0 * strike + 0.3 * follow + 0.1 * recover;
+        this.rArm.rotation.z = 0.2 * wind - 0.1 * strike;
+        this.swordGroup.rotation.x = -0.3 * wind + 0.2 * strike;
+        this.torso.rotation.x = approach(this.torso.rotation.x, -0.15 * wind + 0.1 * strike + recoil, 15, dt);
         this.torso.rotation.y = approach(this.torso.rotation.y, 0, 10, dt);
-
-        // Crouch into slam
-        this.hipPivot.position.y = 0.95 - 0.1 * windEased + 0.08 * strikeEased;
-        this.lKnee.rotation.x = approach(this.lKnee.rotation.x, 0.3 * windEased - 0.15 * strikeEased, 12, dt);
-        this.rKnee.rotation.x = approach(this.rKnee.rotation.x, 0.3 * windEased - 0.15 * strikeEased, 12, dt);
       }
 
-      // Shield tucks during attack
-      this.lShoulder.rotation.x = approach(this.lShoulder.rotation.x, -0.6, 8, dt);
-      this.lShoulder.rotation.y = approach(this.lShoulder.rotation.y, 0.4, 8, dt);
-      this.lElbow.rotation.x = approach(this.lElbow.rotation.x, -1.0, 8, dt);
+      // Shield tucks to body during attack
+      this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.4, 10, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.3, 10, dt);
+
+      // Legs stable
+      this.rLeg.rotation.x = approach(this.rLeg.rotation.x, 0.1 * strike, 8, dt);
+      this.lLeg.rotation.x = approach(this.lLeg.rotation.x, -0.1 * strike, 8, dt);
     }
 
-    // ===== BLOCK STANCE =====
+    // ===== BLOCK =====
     if (state.action === "blocking") {
-      // Shield wall: shield arm forward and up, crouch slightly, sword back
-      this.lShoulder.rotation.x = approach(this.lShoulder.rotation.x, -1.3, 12, dt);
-      this.lShoulder.rotation.y = approach(this.lShoulder.rotation.y, 0.1, 10, dt);
-      this.lShoulder.rotation.z = approach(this.lShoulder.rotation.z, -0.1, 10, dt);
-      this.lElbow.rotation.x = approach(this.lElbow.rotation.x, -0.8, 12, dt);
-      this.lForearm.rotation.z = approach(this.lForearm.rotation.z, 0.2, 10, dt);
+      // Shield arm forward
+      this.lArm.rotation.x = approach(this.lArm.rotation.x, -1.4, 14, dt);
+      this.lArm.rotation.z = approach(this.lArm.rotation.z, -0.15, 10, dt);
 
-      // Sword arm pulls back
-      this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, -0.3, 10, dt);
-      this.rShoulder.rotation.y = approach(this.rShoulder.rotation.y, -0.5, 10, dt);
-      this.rElbow.rotation.x = approach(this.rElbow.rotation.x, -1.0, 10, dt);
+      // Sword arm back
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.2 + recoil, 10, dt);
+      this.rArm.rotation.z = approach(this.rArm.rotation.z, 0.3, 10, dt);
 
       // Slight crouch
-      this.torso.rotation.x = approach(this.torso.rotation.x, -0.08 + recoilLean, 8, dt);
-      this.torso.rotation.y = approach(this.torso.rotation.y, 0.1, 6, dt);
-      this.hipPivot.position.y = approach(this.hipPivot.position.y, 0.88, 8, dt);
-      this.lKnee.rotation.x = approach(this.lKnee.rotation.x, 0.2, 8, dt);
-      this.rKnee.rotation.x = approach(this.rKnee.rotation.x, 0.18, 8, dt);
-
-      // Left foot forward
-      this.lHip.rotation.x = approach(this.lHip.rotation.x, -0.15, 8, dt);
-      this.rHip.rotation.x = approach(this.rHip.rotation.x, 0.1, 8, dt);
+      this.torso.rotation.x = approach(this.torso.rotation.x, -0.05 + recoil, 10, dt);
 
       // Block impact shake
       if (this.blockImpactTime > 0) {
         this.blockImpactTime -= dt;
-        const shake = Math.sin(this.blockImpactTime * 55) * 0.04 * (this.blockImpactTime / 0.2);
-        this.lShoulder.position.z = shake;
+        const shake = Math.sin(this.blockImpactTime * 50) * 0.03 * (this.blockImpactTime / 0.2);
+        this.lArm.position.z = shake;
       } else {
-        this.lShoulder.position.z = approach(this.lShoulder.position.z, 0, 10, dt);
+        this.lArm.position.z = approach(this.lArm.position.z, 0, 12, dt);
       }
-    } else {
-      this.lForearm.rotation.z = approach(this.lForearm.rotation.z, 0, 8, dt);
+
+      this.rLeg.rotation.x = approach(this.rLeg.rotation.x, 0.05, 8, dt);
+      this.lLeg.rotation.x = approach(this.lLeg.rotation.x, -0.1, 8, dt);
     }
 
     // ===== DODGE =====
     if (state.action === "dodging") {
       const p = Math.min(this.dodgeTime / 0.28, 1);
-      const rollAngle = easeOutQuad(p) * Math.PI * 1.5;
+      // Tuck everything
+      this.torso.rotation.x = approach(this.torso.rotation.x, -0.6 * (1 - p), 20, dt);
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, -1.0 * (1 - p), 16, dt);
+      this.lArm.rotation.x = approach(this.lArm.rotation.x, -1.0 * (1 - p), 16, dt);
+      this.rLeg.rotation.x = approach(this.rLeg.rotation.x, -0.5 * (1 - p), 16, dt);
+      this.lLeg.rotation.x = approach(this.lLeg.rotation.x, -0.5 * (1 - p), 16, dt);
 
-      this.torso.rotation.x = approach(this.torso.rotation.x, -0.8 * (1 - p), 18, dt);
-      this.hipPivot.position.y = 0.95 - 0.3 * Math.sin(p * Math.PI);
-
-      // Tuck limbs
-      this.lHip.rotation.x = approach(this.lHip.rotation.x, -0.7 * (1 - p), 15, dt);
-      this.rHip.rotation.x = approach(this.rHip.rotation.x, -0.7 * (1 - p), 15, dt);
-      this.lKnee.rotation.x = approach(this.lKnee.rotation.x, 1.0 * (1 - p), 15, dt);
-      this.rKnee.rotation.x = approach(this.rKnee.rotation.x, 1.0 * (1 - p), 15, dt);
-
-      this.rShoulder.rotation.x = approach(this.rShoulder.rotation.x, -1.2 * (1 - p), 15, dt);
-      this.lShoulder.rotation.x = approach(this.lShoulder.rotation.x, -1.2 * (1 - p), 15, dt);
-
-      // Opacity for ghost effect
-      this.bodyMaterial.transparent = true;
-      this.bodyMaterial.opacity = 0.5 + p * 0.5;
+      // Ghost effect
+      this.bodyMat.transparent = true;
+      this.bodyMat.opacity = 0.5 + p * 0.5;
     } else {
-      if (this.bodyMaterial.transparent && this.hitFlashTime <= 0) {
-        this.bodyMaterial.opacity = approach(this.bodyMaterial.opacity, 1, 10, dt);
-        if (this.bodyMaterial.opacity > 0.99) {
-          this.bodyMaterial.opacity = 1;
-          this.bodyMaterial.transparent = false;
+      if (this.bodyMat.transparent && this.hitFlashTime <= 0) {
+        this.bodyMat.opacity = approach(this.bodyMat.opacity, 1, 12, dt);
+        if (this.bodyMat.opacity > 0.99) {
+          this.bodyMat.opacity = 1;
+          this.bodyMat.transparent = false;
         }
       }
     }
 
     // ===== AIRBORNE =====
     if (inAir && state.action !== "attacking" && state.action !== "dodging") {
-      this.torso.rotation.x = approach(this.torso.rotation.x, -0.2 + recoilLean, 6, dt);
-      this.lHip.rotation.x = approach(this.lHip.rotation.x, -0.2, 6, dt);
-      this.rHip.rotation.x = approach(this.rHip.rotation.x, 0.1, 6, dt);
-      this.lKnee.rotation.x = approach(this.lKnee.rotation.x, 0.3, 6, dt);
-      this.rKnee.rotation.x = approach(this.rKnee.rotation.x, 0.2, 6, dt);
+      this.rLeg.rotation.x = approach(this.rLeg.rotation.x, -0.15, 6, dt);
+      this.lLeg.rotation.x = approach(this.lLeg.rotation.x, 0.1, 6, dt);
+      this.rArm.rotation.x = approach(this.rArm.rotation.x, -0.5 + recoil, 6, dt);
+      this.lArm.rotation.x = approach(this.lArm.rotation.x, -0.5, 6, dt);
     }
 
-    // Reset hip height when not in special states
-    if (state.action !== "blocking" && state.action !== "dodging" && state.action !== "attacking") {
-      this.hipPivot.position.y = approach(this.hipPivot.position.y, 0.95, 10, dt);
-    }
-
-    // Reset sword rotation when not in overhead attack
-    if (state.action !== "attacking" || this.attackStep !== 3) {
-      this.swordGroup.rotation.x = approach(this.swordGroup.rotation.x, -0.15, 8, dt);
-      this.swordGroup.rotation.z = approach(this.swordGroup.rotation.z, 0, 8, dt);
+    // Reset sword rotations when not attacking
+    if (state.action !== "attacking") {
+      this.swordGroup.rotation.x = approach(this.swordGroup.rotation.x, 0, 10, dt);
+      this.swordGroup.rotation.z = approach(this.swordGroup.rotation.z, 0, 10, dt);
     }
   }
 
   // ===================== EFFECTS =====================
   flashHit(): void {
-    this.hitFlashTime = 0.25;
-    this.hitRecoilTime = 0.25;
-    this.scalePulseTime = 0.15;
+    this.hitFlashTime = 0.2;
+    this.hitRecoilTime = 0.2;
+    this.scalePulseTime = 0.12;
   }
 
   flashBlockImpact(): void {
     this.blockImpactTime = 0.2;
-    this.scalePulseTime = 0.08;
+    this.scalePulseTime = 0.06;
   }
 
   applyKnockback(kbX: number, kbZ: number, force: number): void {
@@ -895,17 +576,9 @@ export class PlayerEntity {
     this.kbOffsetZ += kbZ * force * 0.5;
   }
 
-  getPosition(): THREE.Vector3 {
-    return this.group.position;
-  }
-
-  getGroup(): THREE.Group {
-    return this.group;
-  }
-
-  getSwordTip(): THREE.Vector3 {
-    return this.swordTip;
-  }
+  getPosition(): THREE.Vector3 { return this.group.position; }
+  getGroup(): THREE.Group { return this.group; }
+  getSwordTip(): THREE.Vector3 { return this.swordTip; }
 
   destroy(scene: THREE.Scene): void {
     scene.remove(this.group);
